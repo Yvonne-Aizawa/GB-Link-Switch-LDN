@@ -38,6 +38,18 @@ def prepare(data, name=None, new_id=True):
     return byml.Writer(root, version=outer.version).build()
 
 
+def send(path, shown, seconds):
+    """Supply the payload at path once the Switch has connected; exits with its answer."""
+    import ldn_capture
+    os.environ["BEACON"], os.environ["SEND"] = "1", path
+    sys.argv = [sys.argv[0], str(seconds)]
+    ldn_capture.main()
+    answer = ldn_capture.result
+    print({"ACCEPT": f"The Switch accepted {shown}.", "REJECT": "The Switch declined it, or refused the payload.",
+           "CANCEL": "The exchange was cancelled."}.get(answer, "No answer from the Switch."))
+    sys.exit(0 if answer == "ACCEPT" else 1)
+
+
 def main():
     p = argparse.ArgumentParser(description="Send a Mii to Tomodachi Life over Local Play")
     p.add_argument("payload", help="a Mii payload received from a Switch (supply-*.bin)")
@@ -54,15 +66,7 @@ def main():
     open(path, "wb").write(payload)
     print(f"{shown!r}: {len(payload)} bytes in {path}")
     if a.dry_run: return
-
-    import ldn_capture
-    os.environ["BEACON"], os.environ["SEND"] = "1", path
-    sys.argv = [sys.argv[0], str(a.seconds)]
-    ldn_capture.main()
-    answer = ldn_capture.result
-    print({"ACCEPT": f"The Switch accepted {shown}.", "REJECT": "The Switch declined it, or refused the payload.",
-           "CANCEL": "The exchange was cancelled."}.get(answer, "No answer from the Switch."))
-    sys.exit(0 if answer == "ACCEPT" else 1)
+    send(path, shown, a.seconds)
 
 
 if __name__ == "__main__":

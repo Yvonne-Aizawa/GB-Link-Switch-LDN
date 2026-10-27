@@ -93,6 +93,15 @@ def ipv4_frame(dst_mac, src_ip, dst_ip, proto, segment, ident=[0]):
     return bytes.fromhex(dst_mac.replace(":", "")) + bytes(6) + b"\x08\x00" + header + segment
 
 
+def arp_reply(frame, our_mac, our_ip):
+    """The reply to an ARP request for our_ip, or None. lwIP normally answers these, but
+    after some sessions it stops and the Switch never reaches us."""
+    arp = frame[14:42]
+    if len(arp) < 28 or arp[6:8] != b"\x00\x01" or arp[24:28] != bytes(map(int, our_ip.split("."))): return None
+    mac = bytes.fromhex(our_mac.replace(":", ""))
+    return arp[8:14] + mac + b"\x08\x06" + arp[:6] + b"\x00\x02" + mac + arp[24:28] + arp[8:18]
+
+
 def udp_frame(dst_mac, src_ip, dst_ip, sport, dport, payload):
     return ipv4_frame(dst_mac, src_ip, dst_ip, 17, struct.pack(">HHHH", sport, dport, 8 + len(payload), 0) + payload)
 
@@ -311,6 +320,8 @@ def main():
                 if f[0] == "LDN_TAP_FRAME":
                     frame = bytes.fromhex(f[1]); pcap.write(frame); count += 1
                     summary, payload = describe(frame)
+                    reply = beacon and arp_reply(frame, ours, me["ip"])
+                    if reply: esp.command("LDN_ETH " + reply.hex(), 1)
                     if summary.startswith("UDP") and summary.endswith(":5001, 4 bytes") and not token:
                         token = payload; log(start, f"Beacon token {token.hex()}")
                     log(start, summary); text.write(f"{time.time() - start:.3f} {summary} {payload.hex()}\n")
