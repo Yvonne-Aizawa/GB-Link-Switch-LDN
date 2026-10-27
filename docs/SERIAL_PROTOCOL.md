@@ -268,3 +268,10 @@ the console to binary mode); `LDN_RF` reports the signal strength of the room's
 advertisements since the last call; `LDN_ANTENNA 0|1` selects the onboard or external
 antenna on boards with a switch. In binary mode the bridge's own log lines arrive as
 type 3 messages.
+
+For talking to other games with the host's own IP stack (`firmware/tools/tomodachi/`):
+`LDN_TAP 1|0` reports every frame the joined room sends us, other than LDN
+authentication, as `LDN_TAP_FRAME <hex>` (the whole Ethernet frame) and, while on, keeps
+IPv4 away from lwIP so it sends no resets or port-unreachables; ARP still reaches it.
+`LDN_ETH <hex>` sends a whole Ethernet frame into the room, with the board's own MAC
+as the source, `LDN_ETH_RESULT <code>`.

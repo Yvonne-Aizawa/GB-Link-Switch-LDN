@@ -8,3 +8,5 @@
 /app/
 *.log
 prod.keys
+# A game dump; never commit.
+/exefs/
