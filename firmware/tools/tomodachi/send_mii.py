@@ -16,7 +16,7 @@ NAME = 0x25efa387          # the displayed name, in the outer document
 TRANSFER = 0xceb3a288      # the transfer's UUID, as text
 MII = 0xb77378b7           # the inner document with the Mii's fields
 CORE = 0x05f5f62c          # in the inner document: the Mii's core data, its ID first
-MAX_NAME = 10              # not confirmed against the game; longer names only warn
+MAX_NAME = 13              # the game's own limit when renaming; it shows and accepts 30, longer only warns
 
 
 def prepare(data, name=None, new_id=True):
@@ -25,7 +25,8 @@ def prepare(data, name=None, new_id=True):
     root = outer.root
     root.set(TRANSFER, str(uuid.uuid4()))
     if name is not None:
-        if not name or len(name) > MAX_NAME: print(f"warning: {len(name)} characters; the game may refuse it")
+        if not name or len(name) > MAX_NAME:
+            print(f"warning: {len(name)} characters, more than the game allows when naming a Mii")
         root.set(NAME, name)
     if new_id:
         inner = byml.Reader(root.get(MII))
