@@ -171,6 +171,7 @@ class Cltp:
     Saves each supplied payload; answers with CLTP_REPLY (default ACCEPT)."""
     def __init__(self, tcp, start):
         self.tcp, self.start, self.buf, self.need, self.count = tcp, start, bytearray(), 0, 0
+        self.answer = None                     # the last ACCEPT/REJECT/CANCEL received
 
     def feed(self, data):
         self.buf += data
@@ -190,6 +191,7 @@ class Cltp:
             if end < 0: return
             text, self.buf = self.buf[:end].decode("latin-1"), self.buf[end + 1:]
             log(self.start, f"CLTP message {text!r}")
+            if text in ("CLTP ACCEPT", "CLTP REJECT", "CLTP CANCEL"): self.answer = text[5:]
             if text.startswith("CLTP SUPPLY "): self.need = int(text[12:], 16)
 
 
@@ -211,7 +213,11 @@ def describe(frame):
     return f"IP proto {proto} {src} -> {dst}", seg
 
 
+result = None
+
+
 def main():
+    global result
     seconds = float(sys.argv[1]) if len(sys.argv) > 1 else 120
     wanted = sys.argv[2].lower() if len(sys.argv) > 2 else "010051f0207b2000"   # Tomodachi Life
     port = (glob.glob("/dev/serial/by-id/*Espressif*") + glob.glob("/dev/ttyACM*") + [None])[0]
@@ -281,6 +287,9 @@ def main():
         out = Tcp(esp, host["mac"], me["ip"], 49200 + int.from_bytes(os.urandom(1), "big"), start, "out")
         out.cltp = Cltp(out, start); tcp.cltp = Cltp(tcp, start)
         while time.time() < end:
+            # After a send, the Switch's answer ends the run.
+            if sent and (out.cltp.answer or tcp.cltp.answer):
+                result = out.cltp.answer or tcp.cltp.answer; log(start, f"The Switch answered {result}"); break
             if time.time() >= next_ping: esp.command("LDN_PING", 1); next_ping = time.time() + 1
             if beacon and token and out.state is not None and out.peer is None:
                 out.connect((host["ip"], 5002))

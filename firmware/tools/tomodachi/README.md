@@ -8,6 +8,11 @@ cryptography and `~/.switch/prod.keys`.
 On the Switch, open Local Play and press *Look for another player*: that hosts the
 room, which the board joins.
 
+- `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
+  a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
+  reports whether the Switch accepted it. `--dry-run --out FILE` only builds it.
+- `byml.py <file>` dumps a payload's BYAML tree; it reads and rewrites the documents
+  byte for byte.
 - `ldn_scan.py [seconds]` lists the LDN rooms around and decrypts what they advertise.
 - `ldn_capture.py [seconds]` joins the room and logs everything the Switch sends, to a
   pcap and a text log. `BEACON=1` answers the game's handshake and accepts what the
@@ -28,10 +33,12 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
 - **CLTP.** NUL-terminated text messages over TCP: `CLTP SUPPLY 0x<len>` followed by
   `<len>` bytes, answered with `CLTP ACCEPT` or `CLTP REJECT` (also what declining in
   the game sends), or `CLTP CANCEL`.
-- **Payload.** A BYAML document (version 7) holding the Mii as nested documents. At
-  fixed offsets in a 2928-byte Mii: the transfer UUID as text (0x20), the Mii's name
-  (0x45), a second name that is not the one shown (0x8a), and the Mii's own ID, a v4
-  UUID (0x98). A new Mii ID makes it a new resident. String tables must stay sorted, or
-  the Switch rejects the payload at once.
+- **Payload.** A BYAML document (version 7) whose dictionaries are keyed by 32-bit
+  hashes. The outer one holds the displayed name (`25efa387`), the transfer's UUID as
+  text (`ceb3a288`) and the Mii itself as a nested document (`b77378b7`). In that, the
+  152-byte core data (`05f5f62c`) starts with the Mii's ID, a v4 UUID; a new ID makes it
+  a new resident. Clothes and personality traits are small documents of their own,
+  their names under `25efa387` too. Some hashes appear twice (`71f55538`). String
+  tables must stay sorted, or the Switch rejects the payload at once.
 
 `samples/` and `captures/` hold personal data and are not committed.
