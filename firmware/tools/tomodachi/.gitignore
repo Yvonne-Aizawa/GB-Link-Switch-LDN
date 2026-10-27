@@ -1,0 +1,6 @@
+# Personal data: received Miis, captures of a Switch's traffic.
+samples/
+captures/
+supply-*.bin
+capture-*.pcap
+rooms*.jsonl

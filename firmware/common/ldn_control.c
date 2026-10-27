@@ -32,10 +32,26 @@ static int64_t s_console_us;   /* last console RX time; nonzero = a host is atta
 static int s_pending_baud;
 void ldn_control_apply_baud(void);
 static atomic_uint s_dropped, s_rx_count, s_tx_ok, s_tx_failed, s_air_data;
+/* LDN_TAP: copies of every other frame the room sends us, for studying a game's traffic. */
+static QueueHandle_t s_tap;
+static atomic_bool s_tapping;
+static atomic_uint s_tap_dropped;
 
 static esp_err_t control_rx(void *buffer, uint16_t length, void *eb)
 {
     const uint8_t *bytes = buffer;
+    if (atomic_load(&s_tapping) && length <= FRAME_MAX && !(length >= 14 && bytes[12] == 0x88 && bytes[13] == 0xb7)) {
+        static control_frame_t copy;   /* only the Wi-Fi task runs this */
+        copy.length = length;
+        memcpy(copy.bytes, bytes, length);
+        if (xQueueSend(s_tap, &copy, 0) != pdTRUE) atomic_fetch_add(&s_tap_dropped, 1);
+        /* IPv4 stays away from lwIP, whose RSTs and port-unreachables would end the
+           game's attempt; ARP still goes through so the console can reach us. */
+        if (length >= 14 && bytes[12] == 0x08 && bytes[13] == 0x00) {
+            esp_wifi_internal_free_rx_buffer(eb);
+            return ESP_OK;
+        }
+    }
     if (length >= 14 && bytes[12] == 0x88 && bytes[13] == 0xb7) {
         control_frame_t frame;
         if (length <= FRAME_MAX && memcmp(bytes + 6, s_host, 6) == 0) {
@@ -331,6 +347,14 @@ static void command(const char *line)
                ldn_probe_last_rssi());
         return;
     }
+    if (!strcmp(line, "LDN_TAP 1") || !strcmp(line, "LDN_TAP 0")) {
+        const bool on = line[8] == '1';
+        if (on && !s_tap) s_tap = xQueueCreate(16, sizeof(control_frame_t));
+        if (on && !s_tap) { printf("LDN_ERROR NO_MEMORY\n"); return; }
+        atomic_store(&s_tapping, on);
+        printf("LDN_TAP %d dropped=%u\n", on, atomic_load(&s_tap_dropped));
+        return;
+    }
     if (ldn_udp_command(line, atomic_load(&s_connected))) return;
     if (!strcmp(line, "LDN_STATUS")) {
         printf("LDN_LINK %u " MACSTR "\n", atomic_load(&s_connected), MACARGS(s_mac));
@@ -340,20 +364,25 @@ static void command(const char *line)
             atomic_load(&s_dropped), bridge_transport_dropped(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size());
         return;
     }
-    if (strncmp(line, "LDN_TX ", 7)) { printf("LDN_ERROR UNKNOWN_COMMAND\n"); return; }
+    /* LDN_ETH: a whole Ethernet frame from the host, for talking to a game with the
+       host's own IP stack while LDN_TAP keeps lwIP out of the way. */
+    const bool ethernet = !strncmp(line, "LDN_ETH ", 8);
+    if (!ethernet && strncmp(line, "LDN_TX ", 7)) { printf("LDN_ERROR UNKNOWN_COMMAND\n"); return; }
     static uint8_t body[FRAME_MAX];
-    const char *hex = line + 7;
+    const char *hex = line + (ethernet ? 8 : 7);
     size_t n = strlen(hex);
     int result = ESP_ERR_INVALID_ARG;
-    if (n < 10 || n > 3000 || n % 2) goto done;
+    if (n < (ethernet ? 28 : 10) || n > 3006 || n % 2) goto done;
     for (size_t i = 0; i < n / 2; ++i) {
         int hi = nibble(hex[2 * i]), lo = nibble(hex[2 * i + 1]);
         if (hi < 0 || lo < 0) goto done;
         body[i] = (uint8_t)((hi << 4) | lo);
     }
-    result = ldn_control_tx_action(body, n / 2);
+    if (!ethernet) result = ldn_control_tx_action(body, n / 2);
+    else if (!atomic_load(&s_connected)) result = ESP_ERR_INVALID_STATE;
+    else { memcpy(body + 6, s_mac, 6); result = esp_wifi_internal_tx(WIFI_IF_STA, body, n / 2); }
 done:
-    printf("LDN_TX_RESULT %d\n", result);
+    printf(ethernet ? "LDN_ETH_RESULT %d\n" : "LDN_TX_RESULT %d\n", result);
 }
 
 int ldn_control_tx_action(const uint8_t *body, size_t length)
@@ -415,6 +444,12 @@ void ldn_control_poll(void)
         hex[2*n] = 0;
         if (s_action_handler) s_action_handler(frame.bytes + 6, frame.bytes + 14, n);
         else printf("LDN_RX " MACSTR " %s\n", MACARGS(frame.bytes + 6), hex);
+    }
+    /* A few per pass: each is up to 3 KB of hex on the console. */
+    for (int k = 0; k < 4 && s_tap && xQueueReceive(s_tap, &frame, 0) == pdTRUE; ++k) {
+        for (size_t i = 0; i < frame.length; ++i) { hex[2*i] = digits[frame.bytes[i] >> 4]; hex[2*i+1] = digits[frame.bytes[i] & 15]; }
+        hex[2*frame.length] = 0;
+        printf("LDN_TAP_FRAME %s\n", hex);
     }
     static char line[3016];
     static size_t used;
