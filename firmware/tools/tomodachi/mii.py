@@ -2,7 +2,7 @@
 
 A payload can't be made from nothing yet: start from one the Switch sent (a template,
 supply-*.bin), or from a ShareMii .ltd laid over one. What isn't changed stays as the
-template has it (clothes, favourite foods, habits, island and creator).
+template has it (clothes, habits, island and creator).
 
     m = Mii.load("samples/supply-20261028-112535-1.bin")
     m.name, m.pronunciation = "Miku", "mee koo"
@@ -12,16 +12,20 @@ template has it (clothes, favourite foods, habits, island and creator).
     m.set_face_paint("face.png")          # needs zstandard and pillow
     m.wear("Coordinate0091")              # an outfit (the witch outfit); needs the romfs
     m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
+    m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs; needs the romfs
+    m.hated_foods = ["panini", "Crab"]
     m.save("miku.bin")                    # new transfer UUIDs and Mii ID
 
-Fields without a property are reached by name or hash: m["TasteType"], m[0x3cc01748].
-Clothes are named by their IDs in the game's tables; clothes.py <text> finds them.
+Fields without a property are reached by name or hash: m["TasteType"], m["HatedFood1"], m[0x7de5dfb0].
+Clothes are named by their IDs in the game's tables; clothes.py <text> finds them, and
+foods.py <text> finds foods.
 
 Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
        <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--phrase-kind ...] [--gender ...]
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
        [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
-       [--take-off TYPE ...] [--clothes-from FILE] [--romfs DIR]
+       [--take-off TYPE ...] [--clothes-from FILE] [--favourite-foods A,B] [--hated-foods A,B]
+       [--romfs DIR]
        [--out FILE] [--send] [--seconds N]
 Without --out or --send it prints the Mii.
 """
@@ -56,7 +60,10 @@ ENUMS = {"Gender": GENDERS, "ClothStyle": GENDERS, "PronounType": ["He", "She", 
          "WordKind": ["Invalid", "TalkStart", "TalkEnd", "Phrase", "Happy", "Sad", "Angry", "Greeting",
                       "TalkInSleep", "ShoutToSea", "BeforeEat"]}
 FIRST = {"VoicePreset": -3, "WordKind": -1}
-KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956}   # fields whose names are not known
+# Fields whose names are not known. Foods hold the MurmurHash3 of a RSDB/FoodParam Name
+# (Crab): two all-time favourites and two hated foods, each in the order the game lists them.
+KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956,
+        "FavouriteFood1": 0x3cc01748, "FavouriteFood2": 0x79612bf3, "HatedFood1": 0xa95867bb, "HatedFood2": 0x85d70c73}
 PERSONALITY = ["Sociability", "Audaciousness", "Activeness", "Commonsense", "Gaiety"]
 VOICE = ["Formant", "Speed", "Intonation", "Pitch", "Tension"]
 # The .ltd's 18 values at offset 160, in order, by their field names in the payload.
@@ -182,6 +189,22 @@ class Mii:
     cloth_style, voice_preset = _enum("ClothStyle"), _enum("VoicePreset")
     phrase_kind = _enum("WordKind")   # when the phrase is said: TalkStart, TalkEnd, TalkInSleep, ...
     del _enum
+
+    def _foods(fields):
+        def get(self):
+            import foods
+            c = foods.catalog()
+            return [c.name(c.by_hash.get(self[f], f"{self[f]:08x}")) for f in fields]
+        def set(self, names):
+            import foods
+            if len(names) != len(fields): raise ValueError(f"give {len(fields)} foods, in the order the game lists them")
+            c = foods.catalog()
+            for f, n in zip(fields, names): self.inner.set(f, murmur3(c.find(n).encode()))
+        return property(get, set)
+    # Two all-time favourites and two hated foods, in the game's order; read by English name
+    favourite_foods = _foods(["FavouriteFood1", "FavouriteFood2"])
+    hated_foods = _foods(["HatedFood1", "HatedFood2"])
+    del _foods
 
     @property
     def loves(self):
@@ -389,6 +412,8 @@ class Mii:
                  f"  personality {dict(self.personality)}",
                  f"  from {self['PlayerName']!r} on {self['IslandName']!r}"
                  + (", clothes withheld (not the sender's to share)" if self.clothes_withheld else "")]
+        if os.environ.get("TOMODACHI_ROMFS"):
+            lines.append(f"  loves {', '.join(self.favourite_foods)}; hates {', '.join(self.hated_foods)}")
         names = {1: "", 7: "face paint", 8: "outfit", 9: "clothes", 16: "habit"}
         for category, _, name in self.items().values():
             lines.append(f"  item: {names.get(category, f'category {category}')} {name!r}".rstrip())
@@ -430,12 +455,15 @@ def main():
                    help="take off the piece of a type (Headwear, Shoes, BottomsB, ...)")
     p.add_argument("--wear", metavar="ITEM[:COLOUR]", action="append", default=[],
                    help="put on a piece or outfit (clothes.py finds them); needs the romfs and --with zstandard")
-    p.add_argument("--romfs", help="the game's romfs, for clothes (or set TOMODACHI_ROMFS)")
+    p.add_argument("--favourite-foods", metavar="A,B", help="the two all-time favourites (foods.py finds them); needs the romfs")
+    p.add_argument("--hated-foods", metavar="A,B", help="the two hated foods; needs the romfs")
+    p.add_argument("--romfs", help="the game's romfs, for clothes and foods (or set TOMODACHI_ROMFS)")
     p.add_argument("--keep-ids", action="store_true", help="keep the Mii ID and transfer UUIDs")
     p.add_argument("--out", help="write the payload to this file")
     p.add_argument("--send", action="store_true", help="send it to the Switch")
     p.add_argument("--seconds", type=float, default=90, help="how long to wait for the Switch")
     a = p.parse_args()
+    if a.romfs: os.environ["TOMODACHI_ROMFS"] = a.romfs
 
     m = Mii.from_ltd(a.ltd, a.template) if a.ltd else Mii.load(a.template)
     if a.name is not None:
@@ -452,6 +480,8 @@ def main():
     if a.loves is not None: m.loves = [] if a.loves == "none" else a.loves.split(",")
     if a.birthday: m.birthday = tuple(int(x) for x in a.birthday.split("-"))
     if a.voice_preset: m.voice_preset = a.voice_preset
+    if a.favourite_foods: m.favourite_foods = a.favourite_foods.split(",")
+    if a.hated_foods: m.hated_foods = a.hated_foods.split(",")
     if a.face_paint: m.set_face_paint(a.face_paint)
     if a.clothes_from: m.copy_clothes(Mii.load(a.clothes_from))
     for type_ in a.take_off: m.take_off(type_)

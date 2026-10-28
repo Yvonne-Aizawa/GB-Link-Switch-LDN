@@ -17,10 +17,13 @@ room, which the board joins.
   those; without `--out` or `--send` it only prints the Mii. `--wear ITEM[:COLOUR]` puts
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
   `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase (`--phrase-kind` when it is said: TalkStart,
-  TalkEnd, Phrase, TalkInSleep, ...). Foods and habits come from the template.
+  TalkEnd, Phrase, TalkInSleep, ...). `--favourite-foods A,B` and `--hated-foods A,B` set
+  the two all-time favourite and two hated foods by English name or ID. Habits come from
+  the template.
 - `clothes.py <text>` searches the game's 1087 pieces and 347 outfits by ID or English
   name. It and `--wear`/`--take-off` read the game's romfs (`--romfs DIR` or
   `$TOMODACHI_ROMFS`) and need `--with zstandard`.
+- `foods.py <text>` searches the game's foods the same way, for the food options.
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
   reports whether the Switch accepted it. `--dry-run --out FILE` only builds it. Other
@@ -99,6 +102,10 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   save's WordKind numbered from TalkStart (TalkStart 0, TalkEnd 1, Phrase 2, TalkInSleep 7;
   confirmed on received Miis). Removing face paint
   in the game drops its item and sets `ba906068` to -1.
+- **Foods.** Four fields hold the MurmurHash3 of a food's `RSDB/FoodParam` Name (`Tofu`,
+  `Crab`): all-time favourites `3cc01748` then `79612bf3`, hated foods `a95867bb` then
+  `85d70c73`, in the order the game lists them (confirmed by feeding). The foods a Mii
+  has been seen to enjoy aren't sent.
 - **Voice preset.** `a90584fa` numbers the save's presets from Boy: Custom is -1,
   Robot L (top row, fifth) is 8.
 - **More names**, from the hash table of
