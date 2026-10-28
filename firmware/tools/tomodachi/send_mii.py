@@ -20,7 +20,7 @@ MAX_NAME = 13              # the game's own limit when renaming; it shows and ac
 
 
 def prepare(data, name=None, new_id=True):
-    """The payload with a new transfer UUID, and optionally a new name and Mii ID."""
+    """The payload with new transfer UUIDs, and optionally a new name and Mii ID."""
     outer = byml.Reader(data)
     root = outer.root
     root.set(TRANSFER, str(uuid.uuid4()))
@@ -28,12 +28,20 @@ def prepare(data, name=None, new_id=True):
         if not name or len(name) > MAX_NAME:
             print(f"warning: {len(name)} characters, more than the game allows when naming a Mii")
         root.set(NAME, name)
+    inner = byml.Reader(root.get(MII))
+    # Items with a transfer UUID of their own (face paint) need a new one too: one the
+    # island already has makes the Switch hang up without an answer.
+    for key, value in list(inner.root.items.items()):
+        if not isinstance(value, (bytes, bytearray)) or value[:2] != b"YB": continue
+        item = byml.Reader(bytes(value))
+        if TRANSFER not in item.root.items: continue
+        item.root.set(TRANSFER, str(uuid.uuid4()))
+        inner.root.set(key, byml.Writer(item.root, version=item.version).build())
     if new_id:
-        inner = byml.Reader(root.get(MII))
         core = bytearray(inner.root.get(CORE))
         core[:16] = uuid.uuid4().bytes
         inner.root.set(CORE, bytes(core))
-        root.set(MII, byml.Writer(inner.root, inner.strings, inner.version).build())
+    root.set(MII, byml.Writer(inner.root, inner.strings, inner.version).build())
     # Only the strings still in use: the old name and UUID drop out.
     return byml.Writer(root, version=outer.version).build()
 

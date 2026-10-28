@@ -37,6 +37,13 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
 - **CLTP.** NUL-terminated text messages over TCP: `CLTP SUPPLY 0x<len>` followed by
   `<len>` bytes, answered with `CLTP ACCEPT` or `CLTP REJECT` (also what declining in
   the game sends), or `CLTP CANCEL`.
+- **Refusals.** A full island also answers `CLTP REJECT`, about two seconds after the
+  supply, so `send_mii.py` cannot tell it from declining. An item whose transfer UUID
+  (`ceb3a288`) the island already has gets no answer at all: within a second the Switch
+  closes both connections and leaves the room, and the game stays on its receiving
+  screen. Face paint is such an item, nested in the Mii document with a UUID of its own,
+  so a Mii sent back to its island needs new UUIDs for its face paint as well as for the
+  Mii; its Mii ID, name and `IslandName` do not matter.
 - **Payload.** A BYAML document (version 7) whose dictionaries are keyed by 32-bit
   hashes. The outer one holds the displayed name (`25efa387`), the transfer's UUID as
   text (`ceb3a288`) and the Mii itself as a nested document (`b77378b7`). In that, the
@@ -51,5 +58,15 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   `VoiceSpeed`, `VoiceIntonation`, `VoicePitch`, `VoiceTension`. Face paint is an item
   of type 7 whose own document holds the zstd canvas (`25997a82`) and ugctex
   (`b0f5c106`), the same files a `.ltd` carries.
+- **More names**, from the hash table of
+  [ltd-save-editor](https://github.com/alexislours/ltd-save-editor)
+  (`scripts/lib/byml-hashes.tsv`). Every item, the Mii included, is a UGC wrapper:
+  `Category` (`689b60b2`: 6 a Mii, 7 face paint, 8 and 9 clothes), `UgcBinary`
+  (`b77378b7`) and `UgcUuid` (`ceb3a288`). The core data is `CharInfoEx`, laid out in
+  the editor's `packages/ltd-savedata/src/struct/defs/charInfoEx.ts`: `createId1` to
+  `createId4` (the Mii ID), then a name of 11 UTF-16 characters that reads `no name` in
+  received Miis (the game shows the outer `Name`), then the face. The Mii and its face
+  paint also carry where they come from: `IslandName`, `PlayerName` and their
+  `…RegionLanguageID`s.
 
 `samples/` and `captures/` hold personal data and are not committed.
