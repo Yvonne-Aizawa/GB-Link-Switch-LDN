@@ -10,14 +10,19 @@ template has it (clothes, favourite foods, habits, island and creator).
     m.birthday = (2007, 8, 31)
     m.personality["gaiety"] = 8
     m.set_face_paint("face.png")          # needs zstandard and pillow
+    m.wear("Coordinate0091")              # an outfit (the witch outfit); needs the romfs
+    m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
     m.save("miku.bin")                    # new transfer UUIDs and Mii ID
 
 Fields without a property are reached by name or hash: m["TasteType"], m[0x3cc01748].
+Clothes are named by their IDs in the game's tables; clothes.py <text> finds them.
 
 Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
        <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--gender ...]
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
-       [--voice-preset ...] [--face-paint IMAGE] [--out FILE] [--send] [--seconds N]
+       [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
+       [--take-off TYPE ...] [--clothes-from FILE] [--romfs DIR]
+       [--out FILE] [--send] [--seconds N]
 Without --out or --send it prints the Mii.
 """
 import argparse, os, struct, sys, tempfile
@@ -57,6 +62,36 @@ LTD_FIELDS = [f"Character{p}" for p in PERSONALITY] + [f"Voice{v}" for v in VOIC
 CATEGORY, FACE_PAINT = 0x689b60b2, 7       # an item's category; 7 is face paint
 ITEM_ID = 0x2155012a                       # an item's ID, a hash of its internal name
 CANVAS, UGCTEX = 0x25997a82, 0xb0f5c106    # the face paint's zstd files (names unknown)
+OUTFIT, CLOTHING, HABIT = 8, 9, 16         # more item categories
+COLOUR, ITEM_FLAG = 0xbd0d09d7, 0x4dfe38dc  # ColorIndex, and a field that is always 0
+# The item slots. The eight keys seen hold at most an outfit, its six pieces (one per
+# type) and the face paint, which looks like all there are; habits fill free ones.
+SLOTS = [0x0247a06d, 0x14e70791, 0x2421f5bf, 0x51a6b6a2, 0x6e9f1596, 0x8ce538bc, 0x3a01765a, 0xffa7b0eb]
+# The game numbers a Mii's items in the order their data is stored, and points at the one
+# of each kind by that number (-1 for none). Accessory and All pieces have fields too,
+# not known yet. Each habit has its own field; those seen are in HABIT_INDEX.
+INDEX = {"Tops": 0x09862234, "Topslong": 0x4f5d6ba9, "BottomsA": 0xbe30923f, "BottomsB": 0x3dc2dbcd,
+         "Shoes": 0xd6d4ea8f, "Headwear": 0x8ab92078, "Outfit": 0x41b5252b, "FacePaint": 0xba906068}
+HABIT_INDEX = [0x0433c2eb, 0x63d7d8b3, 0x6677d657, 0x8138aa2d, 0xac690f5c, 0xca2cf8c7]
+ITEM_COUNT = 0x7bf9decb
+# What a piece of each type takes off besides one of its own type.
+REPLACES = {"All": {"Tops", "Topslong", "BottomsA", "BottomsB", "Shoes"}, "Topslong": {"Tops", "BottomsA", "All"},
+            "Tops": {"Topslong", "All"}, "BottomsA": {"Topslong", "All"}, "BottomsB": {"All"}, "Shoes": {"All"}}
+
+
+def item_doc(category, item, name, colour):
+    """A clothing or outfit item's document, as the game writes them."""
+    return byml.Writer(byml.Hash32([[ITEM_ID, byml.Value(byml.UINT, murmur3(item.encode()))], [send_mii.NAME, name],
+                                    [ITEM_FLAG, byml.Value(byml.INT, 0)], [CATEGORY, byml.Value(byml.INT, category)],
+                                    [COLOUR, byml.Value(byml.INT, colour)]]), version=7).build()
+
+
+def remove_key(doc, key):
+    """Drop a key from a Hash32 node, keeping the stored order of the others."""
+    keep = [i for i, (k, _) in enumerate(doc.entries) if k != key]
+    new = {old: i for i, old in enumerate(keep)}
+    doc.entries = [doc.entries[i] for i in keep]
+    doc.order = [new[i] for i in doc.order if i in new]
 
 
 def key_of(field): return field if isinstance(field, int) else KEYS.get(field) or H(field)
@@ -184,6 +219,84 @@ class Mii:
         import face_paint
         self.set_face_paint_files(*face_paint.encode(image))
 
+    def _order(self):
+        """The item keys in the order their data is stored, which is how the game numbers them."""
+        root, items = self.inner.root, self.items()
+        later = [i for i in sorted(range(len(root.entries)), key=lambda i: root.entries[i][0])
+                 if byml.kind_of(root.entries[i][1]) in byml.OUT_OF_LINE]
+        order = [i for i in root.order if i in later] + [i for i in later if i not in root.order]
+        return [root.entries[i][0] for i in order if root.entries[i][0] in items]
+
+    def _kinds(self):
+        """{item key: kind}, as the index fields say: a clothing type, Outfit or FacePaint."""
+        order, out = self._order(), {}
+        for kind, field in INDEX.items():
+            i = self[field] if field in self.inner.root.items else -1
+            if 0 <= i < len(order): out[order[i]] = kind
+        return out
+
+    def clothes(self, catalog=None):
+        """The outfit and pieces worn, [(kind, item, colour, name)]: kind a clothing type or
+        Outfit, item the ID name when a catalog (clothes.Catalog) knows it, else its hash."""
+        kinds, items, out = self._kinds(), self.items(), []
+        for key in self._order():
+            if kinds.get(key, "FacePaint") == "FacePaint": continue
+            _, item, name = items[key]
+            colour = plain(Doc(self.inner.get(key)).root.items.get(COLOUR))
+            out.append((kinds[key], catalog.by_hash.get(item, item) if catalog else item, colour, name))
+        return out
+
+    def _dress(self, takes_off, put_on):
+        """Take off the items whose kind takes_off(kind) holds, put on put_on [(kind, item
+        document)], and point the index fields at where everything is now. Emptied slots
+        are reused in place, as the game does, so the other items keep their numbers."""
+        root, order, kinds = self.inner.root, self._order(), self._kinds()
+        stray = [items[2] for k, items in self.items().items() if items[0] in (OUTFIT, CLOTHING) and k not in kinds]
+        if stray: raise ValueError(f"no index field points at {', '.join(map(repr, stray))} (an Accessory or All piece?)")
+        habits = {f: order[self[f]] for f in HABIT_INDEX if f in root.items and 0 <= self[f] < len(order)}
+        gone = [k for k in order if kinds.get(k, "FacePaint") != "FacePaint" and takes_off(kinds[k])]
+        for kind, doc in put_on:
+            key = gone.pop(0) if gone else next((k for k in SLOTS if k not in root.items), None)
+            if key is None: raise ValueError(f"no free item slot for {len(put_on)} items (habits fill the rest)")
+            root.set(key, doc); kinds[key] = kind
+        for key in gone: remove_key(root, key); del kinds[key]
+        order = self._order()
+        for kind, field in INDEX.items():
+            self.inner.set(field, next((i for i, k in enumerate(order) if kinds.get(k) == kind), -1))
+        for field, key in habits.items(): self.inner.set(field, order.index(key) if key in order else -1)
+        self.inner.set(ITEM_COUNT, len(order))
+
+    def wear(self, item, colour=0, catalog=None):
+        """Put on a piece (ClothHeadwearHatWitch) or a whole outfit (Coordinate0091) in one
+        of its colours. A piece replaces the one of its type and those it covers, and
+        breaks up the outfit, as changing a piece in the game does."""
+        import clothes
+        catalog = catalog or clothes.Catalog()
+        unmapped = lambda types: [t for t in types if t not in INDEX]
+        if item in catalog.outfits:
+            pieces, colours = catalog.outfits[item]
+            if not 0 <= colour < len(colours): raise ValueError(f"{item} comes in colours 0 to {len(colours) - 1}")
+            if unmapped(pieces): raise ValueError(f"{item} has a piece of type {unmapped(pieces)[0]}, whose index field is not known yet")
+            put_on = [(t, item_doc(CLOTHING, p, catalog.name(p), colours[colour][t])) for t, p in
+                      sorted(pieces.items(), key=lambda tp: list(INDEX).index(tp[0]))]
+            self._dress(lambda kind: True, put_on + [("Outfit", item_doc(OUTFIT, item, catalog.name(item), colour))])
+        elif item in catalog.type:
+            type_ = catalog.type[item]
+            if unmapped([type_]): raise ValueError(f"the index field of {type_} pieces is not known yet")
+            covers = {type_, "Outfit"} | REPLACES.get(type_, set())
+            self._dress(lambda kind: kind in covers, [(type_, item_doc(CLOTHING, item, catalog.name(item), colour))])
+        else: raise ValueError(f"no piece or outfit {item!r} in the game; clothes.py <text> searches")
+
+    def take_off(self, type_):
+        """Take off the piece of a type (Headwear, Shoes, ...), breaking up the outfit."""
+        self._dress(lambda kind: kind in (type_, "Outfit"), [])
+
+    def copy_clothes(self, other):
+        """Dress this Mii in another Mii's clothes (both Mii objects)."""
+        kinds = other._kinds()
+        self._dress(lambda kind: True, [(kinds[k], bytes(other.inner.get(k))) for k in other._order()
+                                        if kinds.get(k, "FacePaint") != "FacePaint"])
+
     def apply_ltd(self, data):
         """Lay a ShareMii .ltd (version 3) over this Mii: face, name, pronunciation,
         personality, voice, gender, birthday, dating and face paint."""
@@ -270,6 +383,12 @@ def main():
     p.add_argument("--birthday", metavar="Y-M-D")
     p.add_argument("--voice-preset", choices=ENUMS["VoicePreset"][2:])
     p.add_argument("--face-paint", metavar="IMAGE", help="needs --with zstandard --with pillow")
+    p.add_argument("--clothes-from", metavar="FILE", help="dress it in the clothes of another payload")
+    p.add_argument("--take-off", metavar="TYPE", action="append", default=[],
+                   help="take off the piece of a type (Headwear, Shoes, BottomsB, ...)")
+    p.add_argument("--wear", metavar="ITEM[:COLOUR]", action="append", default=[],
+                   help="put on a piece or outfit (clothes.py finds them); needs the romfs and --with zstandard")
+    p.add_argument("--romfs", help="the game's romfs, for clothes (or set TOMODACHI_ROMFS)")
     p.add_argument("--keep-ids", action="store_true", help="keep the Mii ID and transfer UUIDs")
     p.add_argument("--out", help="write the payload to this file")
     p.add_argument("--send", action="store_true", help="send it to the Switch")
@@ -290,6 +409,14 @@ def main():
     if a.birthday: m.birthday = tuple(int(x) for x in a.birthday.split("-"))
     if a.voice_preset: m.voice_preset = a.voice_preset
     if a.face_paint: m.set_face_paint(a.face_paint)
+    if a.clothes_from: m.copy_clothes(Mii.load(a.clothes_from))
+    for type_ in a.take_off: m.take_off(type_)
+    if a.wear:
+        import clothes
+        catalog = clothes.Catalog(a.romfs)
+        for spec in a.wear:
+            item, _, colour = spec.partition(":")
+            m.wear(item, int(colour or 0), catalog)
     if not (a.out or a.send): print(m); return
     path = a.out or os.path.join(tempfile.mkdtemp(prefix="mii-"), "payload.bin")
     data = m.save(path, not a.keep_ids)
