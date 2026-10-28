@@ -7,7 +7,8 @@ Play and press "Look for another player" first, then accept the Mii. Other items
 Switch sent (custom food, say) go the same way, with new transfer UUIDs.
 
 Usage: uv run --with pyserial --with cryptography python -I send_mii.py <payload>
-       [--name NAME] [--keep-id] [--out FILE] [--dry-run] [--seconds N]
+       [--name NAME] [--face-paint IMAGE] [--keep-id] [--out FILE] [--dry-run] [--seconds N]
+(--face-paint needs --with zstandard --with pillow, and a payload that has face paint)
 """
 import argparse, os, sys, tempfile, uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,13 +64,18 @@ def main():
     p = argparse.ArgumentParser(description="Send a Mii to Tomodachi Life over Local Play")
     p.add_argument("payload", help="a Mii or other item received from a Switch (supply-*.bin)")
     p.add_argument("--name", help="new displayed name")
+    p.add_argument("--face-paint", metavar="IMAGE", help="replace the face paint with this image")
     p.add_argument("--keep-id", action="store_true", help="keep the Mii ID (the game sees a duplicate)")
     p.add_argument("--out", help="also write the payload sent to this file")
     p.add_argument("--dry-run", action="store_true", help="only build the payload")
     p.add_argument("--seconds", type=float, default=90, help="how long to wait for the Switch")
     a = p.parse_args()
 
-    payload = prepare(open(a.payload, "rb").read(), a.name, not a.keep_id)
+    data = open(a.payload, "rb").read()
+    if a.face_paint:
+        import face_paint
+        data = face_paint.apply(data, a.face_paint)
+    payload = prepare(data, a.name, not a.keep_id)
     shown = byml.Reader(payload).root.get(NAME)
     path = a.out or os.path.join(tempfile.mkdtemp(prefix="send_mii-"), "payload.bin")
     open(path, "wb").write(payload)
