@@ -13,7 +13,7 @@ room, which the board joins.
   voice preset, personality and voice numbers, face paint, or any field by name
   (`m["TasteType"]`). `--ltd FILE` lays a ShareMii `.ltd` over the template first. On
   the command line, `--name`, `--pronunciation`, `--gender`, `--pronouns`,
-  `--cloth-style`, `--loves`, `--birthday`, `--age` (Adult, Child or years), `--tucked-in`, `--voice-preset` and `--face-paint` set
+  `--cloth-style`, `--loves`, `--birthday`, `--age` (Adult, Child or years), `--tucked-in`, `--voice-preset`, `--face-paint` and `--face-paint-front` set
   those; without `--out` or `--send` it only prints the Mii. `--wear ITEM[:COLOUR]` puts
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
   `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase (`--phrase-kind` when it is said: TalkStart,
@@ -103,6 +103,8 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
 - **Age.** With a birth year, `AgeType` and `DirectAge` are -1. Without one, the age is
   `DirectAge` (years) or else `AgeType`: the save's Invalid, Adult, Child numbered from -1
   (a child is 1). A .ltd has no `AgeType`.
+- **Face paint in front.** `IsFacePaintFront` 1 draws the face paint over the eyes,
+  eyebrows and mouth; 0 (all captures) under them. The nose is in front either way.
 - **Tucked-in top.** `7de5dfb0` (the save's `IsTopsIn`) is 1 when the top is tucked in.
 - **Phrase.** Four fields that exist only once a Mii has a phrase: the text
   (`c3f3d6a6`), an empty string (`87c1aff6`, likely its pronunciation), its language

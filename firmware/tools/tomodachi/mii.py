@@ -11,6 +11,7 @@ template has it (island and creator, and anything not set).
     m.top_tucked_in = True
     m.personality["gaiety"] = 8
     m.set_face_paint("face.png")          # needs zstandard and pillow
+    m.face_paint_in_front = True          # over the eyes, eyebrows and mouth
     m.wear("Coordinate0091")              # an outfit (the witch outfit), from tables.json
     m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
     m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs
@@ -26,7 +27,8 @@ Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
        <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--phrase-kind ...] [--gender ...]
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D] [--age ...]
        [--tucked-in | --no-tucked-in]
-       [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
+       [--voice-preset ...] [--face-paint IMAGE] [--face-paint-front | --no-face-paint-front]
+       [--wear ITEM[:COLOUR] ...]
        [--take-off TYPE ...] [--clothes-from FILE] [--favourite-foods A,B] [--hated-foods A,B]
        [--habits A,B,...] [--add-habit HABIT ...] [--remove-habit HABIT ...]
        [--romfs DIR]
@@ -250,6 +252,9 @@ class Mii:
         self.inner.set("BirthYear", -1)
 
     top_tucked_in = property(lambda self: bool(self["IsTopsIn"]), lambda self, v: self.inner.set("IsTopsIn", int(bool(v))))
+    # Face paint over the eyes, eyebrows and mouth (True), or under them (False, the default)
+    face_paint_in_front = property(lambda self: bool(self["IsFacePaintFront"]),
+                                   lambda self, v: self.inner.set("IsFacePaintFront", int(bool(v))))
 
     @property
     def core(self):
@@ -521,6 +526,8 @@ def main():
     p.add_argument("--voice-preset", choices=ENUMS["VoicePreset"][2:])
     p.add_argument("--phrase-kind", choices=ENUMS["WordKind"][1:], help="when the phrase is said (default TalkStart)")
     p.add_argument("--face-paint", metavar="IMAGE", help="needs --with zstandard --with pillow")
+    p.add_argument("--face-paint-front", action=argparse.BooleanOptionalAction,
+                   help="draw the face paint over the eyes, eyebrows and mouth")
     p.add_argument("--clothes-from", metavar="FILE", help="dress it in the clothes of another payload")
     p.add_argument("--take-off", metavar="TYPE", action="append", default=[],
                    help="take off the piece of a type (Headwear, Shoes, BottomsB, ...)")
@@ -559,6 +566,7 @@ def main():
     if a.favourite_foods: m.favourite_foods = a.favourite_foods.split(",")
     if a.hated_foods: m.hated_foods = a.hated_foods.split(",")
     if a.face_paint: m.set_face_paint(a.face_paint)
+    if a.face_paint_front is not None: m.face_paint_in_front = a.face_paint_front
     if a.clothes_from: m.copy_clothes(Mii.load(a.clothes_from))
     for type_ in a.take_off: m.take_off(type_)
     if a.wear:
