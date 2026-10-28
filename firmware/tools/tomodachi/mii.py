@@ -18,7 +18,7 @@ Fields without a property are reached by name or hash: m["TasteType"], m[0x3cc01
 Clothes are named by their IDs in the game's tables; clothes.py <text> finds them.
 
 Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
-       <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--gender ...]
+       <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--phrase-kind ...] [--gender ...]
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
        [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
        [--take-off TYPE ...] [--clothes-from FILE] [--romfs DIR]
@@ -51,9 +51,12 @@ GENDERS = ["Male", "Female", "NonBinary"]
 ENUMS = {"Gender": GENDERS, "ClothStyle": GENDERS, "PronounType": ["He", "She", "They"],
          # Numbered from Boy: Custom is -1 (a custom voice), Robot L 8 (seen in game)
          "VoicePreset": ["Pet", "System", "Custom", "Boy", "Girl", "Male", "Female", "OldMan", "OldWoman",
-                         "BigCharacter", "SmallCharacter", "RobotL", "RobotS"]}
-FIRST = {"VoicePreset": -3}
-KEYS = {"VoicePreset": 0xa90584fa}         # fields whose names are not known
+                         "BigCharacter", "SmallCharacter", "RobotL", "RobotS"],
+         # When the phrase is said; numbered from TalkStart (seen in game: TalkEnd 1, Phrase 2, TalkInSleep 7)
+         "WordKind": ["Invalid", "TalkStart", "TalkEnd", "Phrase", "Happy", "Sad", "Angry", "Greeting",
+                      "TalkInSleep", "ShoutToSea", "BeforeEat"]}
+FIRST = {"VoicePreset": -3, "WordKind": -1}
+KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956}   # fields whose names are not known
 PERSONALITY = ["Sociability", "Audaciousness", "Activeness", "Commonsense", "Gaiety"]
 VOICE = ["Formant", "Speed", "Intonation", "Pitch", "Tension"]
 # The .ltd's 18 values at offset 160, in order, by their field names in the payload.
@@ -63,19 +66,28 @@ CATEGORY, FACE_PAINT = 0x689b60b2, 7       # an item's category; 7 is face paint
 ITEM_ID = 0x2155012a                       # an item's ID, a hash of its internal name
 CANVAS, UGCTEX = 0x25997a82, 0xb0f5c106    # the face paint's zstd files (names unknown)
 OUTFIT, CLOTHING, HABIT = 8, 9, 16         # more item categories
-COLOUR, ITEM_FLAG = 0xbd0d09d7, 0x4dfe38dc  # ColorIndex, and a field that is always 0
-# The item slots. The eight keys seen hold at most an outfit, its six pieces (one per
-# type) and the face paint, which looks like all there are; habits fill free ones.
-SLOTS = [0x0247a06d, 0x14e70791, 0x2421f5bf, 0x51a6b6a2, 0x6e9f1596, 0x8ce538bc, 0x3a01765a, 0xffa7b0eb]
+# ColorIndex, and what can't be shared: 0 in items; in the outer document -3 when the Mii's
+# clothes came from someone else, which the Switch then sends as starter clothes instead.
+COLOUR, ITEM_FLAG = 0xbd0d09d7, 0x4dfe38dc
+CLOTHES_WITHHELD = -3
+# The item slots: clothes, the outfit, the face paint and habits share them. Twelve keys
+# seen; a Mii with an outfit of four pieces and seven habits used all twelve.
+SLOTS = [0x0247a06d, 0x14e70791, 0x2421f5bf, 0x51a6b6a2, 0x6e9f1596, 0x8ce538bc, 0x3a01765a, 0xffa7b0eb,
+         0x99a2b6e1, 0x14cdbc7d, 0x01e0b2b5, 0x215e6297]
 # The game numbers a Mii's items in the order their data is stored, and points at the one
-# of each kind by that number (-1 for none). Accessory and All pieces have fields too,
-# not known yet. Each habit has its own field; those seen are in HABIT_INDEX.
-INDEX = {"Tops": 0x09862234, "Topslong": 0x4f5d6ba9, "BottomsA": 0xbe30923f, "BottomsB": 0x3dc2dbcd,
-         "Shoes": 0xd6d4ea8f, "Headwear": 0x8ab92078, "Outfit": 0x41b5252b, "FacePaint": 0xba906068}
-HABIT_INDEX = [0x0433c2eb, 0x63d7d8b3, 0x6677d657, 0x8138aa2d, 0xac690f5c, 0xca2cf8c7]
+# of each kind by that number (-1 for none). Pieces are listed here in the order the game
+# stores an outfit's (All first, Accessory before Headwear). Each habit has its own field.
+INDEX = {"All": 0xfcfe477c, "Tops": 0x09862234, "Topslong": 0x4f5d6ba9, "BottomsA": 0xbe30923f,
+         "BottomsB": 0x3dc2dbcd, "Shoes": 0xd6d4ea8f, "Accessory": 0x012523d9, "Headwear": 0x8ab92078,
+         "Outfit": 0x41b5252b, "FacePaint": 0xba906068}
+# Habits fill seven numbered slots in this order (a Mii with n habits uses the first n,
+# true of all 33 captures). Each slot has an index field and a field that is 1 once it is
+# used and absent before; the game's list shows them grouped by kind, not in slot order.
+HABIT_INDEX = [0x0433c2eb, 0x63d7d8b3, 0xac690f5c, 0x8138aa2d, 0x6677d657, 0xca2cf8c7, 0xe153d8ce]
+HABIT_USED = [0x502a5d7d, 0x49dbacc0, 0xf6e0191f, 0x02d2f68c, 0xedcf1f80, 0x5287f5cc, 0x7d49dca1]
 ITEM_COUNT = 0x7bf9decb
-# The phrase: these fields exist only once a Mii has one (names unknown).
-PHRASE, PHRASE_SAYS, PHRASE_LANGUAGE, PHRASE_FLAG = 0xc3f3d6a6, 0x87c1aff6, 0x51110d81, 0xe5da2956
+# The phrase: these fields exist only once a Mii has one (names unknown), with WordKind.
+PHRASE, PHRASE_SAYS, PHRASE_LANGUAGE = 0xc3f3d6a6, 0x87c1aff6, 0x51110d81
 # What a piece of each type takes off besides one of its own type.
 REPLACES = {"All": {"Tops", "Topslong", "BottomsA", "BottomsB", "Shoes"}, "Topslong": {"Tops", "BottomsA", "All"},
             "Tops": {"Topslong", "All"}, "BottomsA": {"Topslong", "All"}, "BottomsB": {"All"}, "Shoes": {"All"}}
@@ -153,7 +165,7 @@ class Mii:
     def phrase(self, text):
         root = self.inner.root
         if PHRASE not in root.items:   # as the game adds them; the language as the name's
-            root.set(PHRASE_SAYS, ""); root.set(PHRASE_FLAG, byml.Value(byml.INT, 0))
+            root.set(PHRASE_SAYS, ""); root.set(KEYS["WordKind"], byml.Value(byml.INT, 0))
             root.set(PHRASE_LANGUAGE, byml.Value(byml.INT, self["NameRegionLanguageID"]))
         root.set(PHRASE, text)
 
@@ -168,6 +180,7 @@ class Mii:
         return property(get, set)
     gender, pronouns = _enum("Gender"), _enum("PronounType")
     cloth_style, voice_preset = _enum("ClothStyle"), _enum("VoicePreset")
+    phrase_kind = _enum("WordKind")   # when the phrase is said: TalkStart, TalkEnd, TalkInSleep, ...
     del _enum
 
     @property
@@ -250,6 +263,17 @@ class Mii:
             if 0 <= i < len(order): out[order[i]] = kind
         return out
 
+    @property
+    def clothes_withheld(self):
+        """The sender's clothes weren't theirs to share, so these are starter clothes."""
+        return plain(self.outer.get(ITEM_FLAG)) == CLOTHES_WITHHELD
+
+    def habits(self):
+        """The habits' names in slot order (the order they fill the slots)."""
+        order, items = self._order(), self.items()
+        return [items[order[self[f]]][2] for f in HABIT_INDEX
+                if f in self.inner.root.items and 0 <= self[f] < len(order)]
+
     def clothes(self, catalog=None):
         """The outfit and pieces worn, [(kind, item, colour, name)]: kind a clothing type or
         Outfit, item the ID name when a catalog (clothes.Catalog) knows it, else its hash."""
@@ -267,7 +291,7 @@ class Mii:
         are reused in place, as the game does, so the other items keep their numbers."""
         root, order, kinds = self.inner.root, self._order(), self._kinds()
         stray = [items[2] for k, items in self.items().items() if items[0] in (OUTFIT, CLOTHING) and k not in kinds]
-        if stray: raise ValueError(f"no index field points at {', '.join(map(repr, stray))} (an Accessory or All piece?)")
+        if stray: raise ValueError(f"no index field points at {', '.join(map(repr, stray))}")
         habits = {f: order[self[f]] for f in HABIT_INDEX if f in root.items and 0 <= self[f] < len(order)}
         gone = [k for k in order if kinds.get(k, "FacePaint") != "FacePaint" and takes_off(kinds[k])]
         for kind, doc in put_on:
@@ -359,11 +383,12 @@ class Mii:
     def __str__(self):
         born = "-".join("?" if v < 0 else f"{v:0{w}}" for v, w in zip(self.birthday, (4, 2, 2)))
         lines = [f"{self.name!r} (says {self.pronunciation!r}), Mii ID {self.core[:16].hex()}"
-                 + (f", phrase {self.phrase!r}" if self.phrase else ""),
+                 + (f", phrase {self.phrase!r} ({self.phrase_kind})" if self.phrase else ""),
                  f"  {self.gender}, {self.pronouns}, clothes {self.cloth_style}, dates {', '.join(sorted(self.loves)) or 'nobody'}",
                  f"  born {born}, voice {self.voice_preset} {dict(self.voice)}",
                  f"  personality {dict(self.personality)}",
-                 f"  from {self['PlayerName']!r} on {self['IslandName']!r}"]
+                 f"  from {self['PlayerName']!r} on {self['IslandName']!r}"
+                 + (", clothes withheld (not the sender's to share)" if self.clothes_withheld else "")]
         names = {1: "", 7: "face paint", 8: "outfit", 9: "clothes", 16: "habit"}
         for category, _, name in self.items().values():
             lines.append(f"  item: {names.get(category, f'category {category}')} {name!r}".rstrip())
@@ -398,6 +423,7 @@ def main():
     p.add_argument("--loves", help="comma-separated genders the Mii dates, or none")
     p.add_argument("--birthday", metavar="Y-M-D")
     p.add_argument("--voice-preset", choices=ENUMS["VoicePreset"][2:])
+    p.add_argument("--phrase-kind", choices=ENUMS["WordKind"][1:], help="when the phrase is said (default TalkStart)")
     p.add_argument("--face-paint", metavar="IMAGE", help="needs --with zstandard --with pillow")
     p.add_argument("--clothes-from", metavar="FILE", help="dress it in the clothes of another payload")
     p.add_argument("--take-off", metavar="TYPE", action="append", default=[],
@@ -419,6 +445,7 @@ def main():
         m.name = a.name
     if a.pronunciation is not None: m.pronunciation = a.pronunciation
     if a.phrase is not None: m.phrase = a.phrase
+    if a.phrase_kind: m.phrase_kind = a.phrase_kind
     if a.gender: m.gender = a.gender
     if a.pronouns: m.pronouns = a.pronouns
     if a.cloth_style: m.cloth_style = a.cloth_style
