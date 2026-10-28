@@ -10,7 +10,9 @@ room, which the board joins.
 
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
-  reports whether the Switch accepted it. `--dry-run --out FILE` only builds it.
+  reports whether the Switch accepted it. `--dry-run --out FILE` only builds it. Other
+  items the Switch supplied, such as custom food, go the same way with a new transfer
+  UUID.
 - `ltd_to_payload.py <mii.ltd> <template>` sends a Mii exported by
   [ShareMii](https://github.com/Star-F0rce/ShareMii): its face, face paint, name,
   personality, voice and birthday go into a payload the Switch supplied before (one
@@ -68,5 +70,12 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   received Miis (the game shows the outer `Name`), then the face. The Mii and its face
   paint also carry where they come from: `IslandName`, `PlayerName` and their
   `…RegionLanguageID`s.
+- **Custom items** travel in the same wrapper. Food is `Category` 12; its document has
+  `Price`, `BaseScale`, `Temperature`, `AttrTaste`, `AttrType`, the `Emission…` fields,
+  `TextureSourceType`, `IslandName` and `PlayerName`, and three zstd files: the
+  drawing (`04fff1c1`, 256×256 RGBA in the GPU's block-linear layout, 16 GOBs per block),
+  a 64 KB one (`784e7ede`, likely the ugctex) and a 96 KB one (`afa60833`). Sent back to
+  its own island with a new transfer UUID, food is accepted and shown as received from
+  another owner, as the game seems to mark every item that arrives over Local Play.
 
 `samples/` and `captures/` hold personal data and are not committed.

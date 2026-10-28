@@ -3,7 +3,8 @@
 Takes a Mii payload the Switch sent before (ldn_capture.py with BEACON=1 saves them as
 supply-*.bin), optionally renames it, gives it a new Mii ID so the game takes it as a
 new resident, and supplies it once the Switch has connected. On the Switch, open Local
-Play and press "Look for another player" first, then accept the Mii.
+Play and press "Look for another player" first, then accept the Mii. Other items the
+Switch sent (custom food, say) go the same way, with new transfer UUIDs.
 
 Usage: uv run --with pyserial --with cryptography python -I send_mii.py <payload>
        [--name NAME] [--keep-id] [--out FILE] [--dry-run] [--seconds N]
@@ -37,7 +38,7 @@ def prepare(data, name=None, new_id=True):
         if TRANSFER not in item.root.items: continue
         item.root.set(TRANSFER, str(uuid.uuid4()))
         inner.root.set(key, byml.Writer(item.root, version=item.version).build())
-    if new_id:
+    if new_id and CORE in inner.root.items:   # only Miis have one; other items go as they are
         core = bytearray(inner.root.get(CORE))
         core[:16] = uuid.uuid4().bytes
         inner.root.set(CORE, bytes(core))
@@ -60,7 +61,7 @@ def send(path, shown, seconds):
 
 def main():
     p = argparse.ArgumentParser(description="Send a Mii to Tomodachi Life over Local Play")
-    p.add_argument("payload", help="a Mii payload received from a Switch (supply-*.bin)")
+    p.add_argument("payload", help="a Mii or other item received from a Switch (supply-*.bin)")
     p.add_argument("--name", help="new displayed name")
     p.add_argument("--keep-id", action="store_true", help="keep the Mii ID (the game sees a duplicate)")
     p.add_argument("--out", help="also write the payload sent to this file")
