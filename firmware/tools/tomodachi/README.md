@@ -16,7 +16,7 @@ room, which the board joins.
   `--cloth-style`, `--loves`, `--birthday`, `--voice-preset` and `--face-paint` set
   those; without `--out` or `--send` it only prints the Mii. `--wear ITEM[:COLOUR]` puts
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
-  `--clothes-from FILE` copies another Mii's clothes. Accessories and full-body
+  `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase. Accessories and full-body
   costumes can't be put on yet. Foods and habits come from the template.
 - `clothes.py <text>` searches the game's 1087 pieces and 347 outfits by ID or English
   name. It and `--wear`/`--take-off` read the game's romfs (`--romfs DIR` or
@@ -90,6 +90,10 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   "A communication error has occurred" after "Someone sent you a Mii!" and hang up. The
   fields for Accessory and All (costume) pieces are not known yet. Changing one piece
   in the game drops the outfit item and reuses its slot.
+- **Phrase.** Four fields that exist only once a Mii has a phrase: the text
+  (`c3f3d6a6`), an empty string (`87c1aff6`, likely its pronunciation), its language
+  (`51110d81`, 5 like the other language fields) and `e5da2956` = 0. Removing face paint
+  in the game drops its item and sets `ba906068` to -1.
 - **Voice preset.** `a90584fa` numbers the save's presets from Boy: Custom is -1,
   Robot L (top row, fifth) is 8.
 - **More names**, from the hash table of

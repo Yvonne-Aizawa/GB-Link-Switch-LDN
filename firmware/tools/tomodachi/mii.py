@@ -18,7 +18,7 @@ Fields without a property are reached by name or hash: m["TasteType"], m[0x3cc01
 Clothes are named by their IDs in the game's tables; clothes.py <text> finds them.
 
 Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
-       <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--gender ...]
+       <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--gender ...]
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
        [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
        [--take-off TYPE ...] [--clothes-from FILE] [--romfs DIR]
@@ -74,6 +74,8 @@ INDEX = {"Tops": 0x09862234, "Topslong": 0x4f5d6ba9, "BottomsA": 0xbe30923f, "Bo
          "Shoes": 0xd6d4ea8f, "Headwear": 0x8ab92078, "Outfit": 0x41b5252b, "FacePaint": 0xba906068}
 HABIT_INDEX = [0x0433c2eb, 0x63d7d8b3, 0x6677d657, 0x8138aa2d, 0xac690f5c, 0xca2cf8c7]
 ITEM_COUNT = 0x7bf9decb
+# The phrase: these fields exist only once a Mii has one (names unknown).
+PHRASE, PHRASE_SAYS, PHRASE_LANGUAGE, PHRASE_FLAG = 0xc3f3d6a6, 0x87c1aff6, 0x51110d81, 0xe5da2956
 # What a piece of each type takes off besides one of its own type.
 REPLACES = {"All": {"Tops", "Topslong", "BottomsA", "BottomsB", "Shoes"}, "Topslong": {"Tops", "BottomsA", "All"},
             "Tops": {"Topslong", "All"}, "BottomsA": {"Topslong", "All"}, "BottomsB": {"All"}, "Shoes": {"All"}}
@@ -141,6 +143,19 @@ class Mii:
     # Names: the outer Name is what the game shows, CallName what it says.
     name = property(lambda self: self.outer.get(send_mii.NAME), lambda self, v: self.outer.set(send_mii.NAME, v))
     pronunciation = property(lambda self: self.inner.get("CallName"), lambda self, v: self.inner.set("CallName", v))
+
+    @property
+    def phrase(self):
+        """The Mii's phrase ('Ahem'), or '' for none."""
+        return self.inner.root.items.get(PHRASE, "")
+
+    @phrase.setter
+    def phrase(self, text):
+        root = self.inner.root
+        if PHRASE not in root.items:   # as the game adds them; the language as the name's
+            root.set(PHRASE_SAYS, ""); root.set(PHRASE_FLAG, byml.Value(byml.INT, 0))
+            root.set(PHRASE_LANGUAGE, byml.Value(byml.INT, self["NameRegionLanguageID"]))
+        root.set(PHRASE, text)
 
     def _enum(field):
         def get(self):
@@ -343,7 +358,8 @@ class Mii:
 
     def __str__(self):
         born = "-".join("?" if v < 0 else f"{v:0{w}}" for v, w in zip(self.birthday, (4, 2, 2)))
-        lines = [f"{self.name!r} (says {self.pronunciation!r}), Mii ID {self.core[:16].hex()}",
+        lines = [f"{self.name!r} (says {self.pronunciation!r}), Mii ID {self.core[:16].hex()}"
+                 + (f", phrase {self.phrase!r}" if self.phrase else ""),
                  f"  {self.gender}, {self.pronouns}, clothes {self.cloth_style}, dates {', '.join(sorted(self.loves)) or 'nobody'}",
                  f"  born {born}, voice {self.voice_preset} {dict(self.voice)}",
                  f"  personality {dict(self.personality)}",
@@ -376,7 +392,7 @@ def main():
     p = argparse.ArgumentParser(description="Edit a Tomodachi Life Mii payload, and send or save it")
     p.add_argument("template", help="a Mii payload received from a Switch (supply-*.bin)")
     p.add_argument("--ltd", help="lay a ShareMii .ltd over the template first")
-    p.add_argument("--name"); p.add_argument("--pronunciation")
+    p.add_argument("--name"); p.add_argument("--pronunciation"); p.add_argument("--phrase")
     p.add_argument("--gender", choices=GENDERS); p.add_argument("--pronouns", choices=ENUMS["PronounType"])
     p.add_argument("--cloth-style", choices=GENDERS)
     p.add_argument("--loves", help="comma-separated genders the Mii dates, or none")
@@ -402,6 +418,7 @@ def main():
         if m.pronunciation == m.name: m.pronunciation = a.name   # it said the old name
         m.name = a.name
     if a.pronunciation is not None: m.pronunciation = a.pronunciation
+    if a.phrase is not None: m.phrase = a.phrase
     if a.gender: m.gender = a.gender
     if a.pronouns: m.pronouns = a.pronouns
     if a.cloth_style: m.cloth_style = a.cloth_style
