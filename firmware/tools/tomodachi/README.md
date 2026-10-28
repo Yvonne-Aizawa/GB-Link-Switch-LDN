@@ -8,6 +8,14 @@ cryptography and `~/.switch/prod.keys`.
 On the Switch, open Local Play and press *Look for another player*: that hosts the
 room, which the board joins.
 
+- `mii.py <template>` edits a Mii as a Python object (`Mii` class) and writes or sends
+  it: name, pronunciation, gender, pronouns, clothing style, who they date, birthday,
+  voice preset, personality and voice numbers, face paint, or any field by name
+  (`m["TasteType"]`). `--ltd FILE` lays a ShareMii `.ltd` over the template first. On
+  the command line, `--name`, `--pronunciation`, `--gender`, `--pronouns`,
+  `--cloth-style`, `--loves`, `--birthday`, `--voice-preset` and `--face-paint` set
+  those; without `--out` or `--send` it only prints the Mii. Clothes, foods and habits
+  come from the template.
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
   reports whether the Switch accepted it. `--dry-run --out FILE` only builds it. Other
@@ -18,7 +26,7 @@ room, which the board joins.
   [ShareMii](https://github.com/Star-F0rce/ShareMii): its face, face paint, name,
   pronunciation, personality, voice and birthday go into a payload the Switch supplied
   before (one with face paint when the `.ltd` has it). Takes the same `--name`, `--out`,
-  `--dry-run`.
+  `--dry-run`. It is `mii.py --ltd` with fewer options.
 - `face_paint.py <payload> <image> <out>` does only the face paint part of that.
 - `byml.py <file>` dumps a payload's BYAML tree; it reads and rewrites the documents
   byte for byte.

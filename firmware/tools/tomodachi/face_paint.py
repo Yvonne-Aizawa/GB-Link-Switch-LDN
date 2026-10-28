@@ -8,12 +8,8 @@ Transparent BC1 blocks are 00000000 ffffffff, as the game writes them.
 Usage as a script: uv run --with zstandard --with pillow python -I face_paint.py
        <payload> <image> <out>   (send the result with send_mii.py)
 """
-import os, struct, sys, uuid
+import os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import byml
-from ltd_to_payload import CANVAS, FACE_PAINT, ITEM_TYPE, UGCTEX, nested
-
-TRANSFER, PAINT = 0xceb3a288, 0xb77378b7   # as send_mii.TRANSFER and send_mii.MII
 
 
 def bl_offset(x, y, width, bpp, block_gobs=16):
@@ -77,20 +73,10 @@ def encode(path):
 
 def apply(data, path):
     """The payload with the image as its face paint; it must already have face paint."""
-    canvas, ugctex = encode(path)
-    outer = byml.Reader(data)
-    inner, store_inner = nested(outer.root, PAINT)
-    paints = [k for k, v in inner.items.items() if isinstance(v, (bytes, bytearray))
-              and v[:2] == b"YB" and byml.Reader(bytes(v)).root.items.get(ITEM_TYPE, byml.Value(0, 0)).value == FACE_PAINT]
-    if not paints: raise ValueError("the payload has no face paint to replace")
-    for key in paints:
-        item, store_item = nested(inner, key)
-        item.set(TRANSFER, str(uuid.uuid4()))
-        paint, store_paint = nested(item, PAINT)
-        paint.set(CANVAS, canvas); paint.set(UGCTEX, ugctex)
-        store_paint(); store_item()
-    store_inner()
-    return byml.Writer(outer.root, version=outer.version).build()
+    from mii import Mii
+    m = Mii(data)
+    m.set_face_paint(path)
+    return m.build(new_ids=False)
 
 
 if __name__ == "__main__":
