@@ -77,7 +77,7 @@ void ldn_wire_enable(void)
     esp_log_level_set("*", ESP_LOG_NONE);
     const uint8_t zero = 0;
     bridge_transport_write(&zero, 1);
-    ldn_wire_printf("LDN_HELLO 1 %s dynamic-session,scan,auth,udp 1472\n", CONFIG_IDF_TARGET);
+    ldn_wire_printf("LDN_HELLO 1 %s dynamic-session,scan,auth,udp,join,tap 1472\n", CONFIG_IDF_TARGET);
 }
 
 int ldn_wire_printf(const char *format, ...)

@@ -275,3 +275,17 @@ authentication, as `LDN_TAP_FRAME <hex>` (the whole Ethernet frame) and, while o
 IPv4 away from lwIP so it sends no resets or port-unreachables; ARP still reaches it.
 `LDN_ETH <hex>` sends a whole Ethernet frame into the room, with the board's own MAC
 as the source, `LDN_ETH_RESULT <code>`.
+
+`LDN_JOIN <communication ID, 16 hex digits> <passphrase in hex, up to 64 bytes>` joins
+that game's room with the stored keys, so such a host needs no keys of its own (version
+2.2.0, HELLO capability `join`). The bridge must be stopped. It answers
+`LDN_JOIN_STARTED <id>`, then reports asynchronously:
+
+| Line | Meaning |
+| --- | --- |
+| `LDN_JOIN_ROOM <channel> <host name>` | The room was heard; associating and authenticating |
+| `LDN_JOINED <our IPv4> <our MAC> <host IPv4> <host MAC> <host name>` | A member: `LDN_NET` and `LDN_NEIGH` are done; MACs are 12 hex digits, the name may hold spaces |
+| `LDN_JOIN_FAILED <reason>` | `NO_ROOM` (none heard for 60 s), `ASSOCIATION`, `REFUSED`, `MEMBERSHIP`, `NO_KEYS`, `AUTH_BUILD`, or `LINK_LOST` after joining; the radio is stopped |
+
+`LDN_JOIN_STOP` leaves the room (`LDN_JOIN_STOPPED`), as do `LDN_STOP`, `LDN_BEGIN` and
+`LDN_BRIDGE_START`. Once joined the host keeps the link alive with `LDN_PING`.

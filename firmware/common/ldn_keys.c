@@ -105,10 +105,16 @@ static const uint8_t kNetworkSeed[64] = {
 
 bool ldn_keys_network(const ldn_network_t *net, uint8_t out[16])
 {
-    uint8_t material[16 + sizeof(kNetworkSeed)];
+    return ldn_keys_network_with(net, kNetworkSeed, sizeof(kNetworkSeed), out);
+}
+
+bool ldn_keys_network_with(const ldn_network_t *net, const uint8_t *passphrase, size_t len, uint8_t out[16])
+{
+    uint8_t material[16 + LDN_MAX_PASSPHRASE];
+    if (len > LDN_MAX_PASSPHRASE) return false;
     memcpy(material, net->random, 16);
-    memcpy(material + 16, kNetworkSeed, sizeof(kNetworkSeed));
-    return ldn_keys_derive(net->protocol, material, sizeof(material), false, out);
+    memcpy(material + 16, passphrase, len);
+    return ldn_keys_derive(net->protocol, material, 16 + len, false, out);
 }
 
 static void little_id(const ldn_network_t *net, uint8_t out[32])

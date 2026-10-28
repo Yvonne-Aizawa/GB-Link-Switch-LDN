@@ -37,8 +37,10 @@ void ldn_keys_erase(void);
 
 /* LDN key ladder: master -> kek -> generation -> SHA256(data). */
 bool ldn_keys_derive(int protocol, const uint8_t *data, size_t len, bool advertise, uint8_t out[16]);
-/* CCMP key for the room's Wi-Fi network. */
+/* CCMP key for the room's Wi-Fi network: FireRed's, or any game's from its passphrase. */
+#define LDN_MAX_PASSPHRASE 64
 bool ldn_keys_network(const ldn_network_t *net, uint8_t out[16]);
+bool ldn_keys_network_with(const ldn_network_t *net, const uint8_t *passphrase, size_t len, uint8_t out[16]);
 
 /* Parse and authenticate a raw LDN advertisement. False unless it is a valid
    production-security room the stored keys can join. */

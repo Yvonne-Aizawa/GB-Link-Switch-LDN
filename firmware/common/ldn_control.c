@@ -16,6 +16,7 @@
 #include "pico_link.h"
 #include "ldn_keys.h"
 #include "pia_bridge.h"
+#include "ldn_join.h"
 #include "trade_shim.h"
 #include "esp_timer.h"
 #define printf ldn_wire_printf
@@ -189,7 +190,7 @@ static void command(const char *line)
         if (*end || !id || strlen(line + 10) != 8) { printf("LDN_ERROR INVALID_SESSION\n"); return; }
         /* Reset the radio only if the host owns it; the bridge's room must survive a
            client attaching. */
-        if (!pia_bridge_running()) ldn_session_stop();
+        if (!pia_bridge_running()) { ldn_join_reset(); ldn_session_stop(); }
         ldn_wire_session((uint32_t)id); printf("LDN_BEGUN\n"); return;
     }
     /* Radio commands for a host that runs the session itself. */
@@ -209,7 +210,8 @@ static void command(const char *line)
         memset(key, 0, sizeof(key));
         printf("LDN_CONFIG_RESULT %d\n", result); return;
     }
-    if (!strcmp(line, "LDN_STOP")) { ldn_session_stop(); printf("LDN_STOPPED\n"); return; }
+    if (!strcmp(line, "LDN_STOP")) { ldn_join_reset(); ldn_session_stop(); printf("LDN_STOPPED\n"); return; }
+    if (ldn_join_command(line)) return;
     if (!strcmp(line, "LDN_QUIET")) { printf("LDN_QUIET_OK\n"); return; }
     /* Pico link commands: start, stop and counters only. */
     if (!strcmp(line, "LDN_PICO_START")) {
@@ -244,7 +246,7 @@ static void command(const char *line)
         return;
     }
     if (!strcmp(line, "LDN_KEYS_ERASE")) { ldn_keys_erase(); printf("LDN_KEYS_ERASED\n"); return; }
-    if (!strcmp(line, "LDN_BRIDGE_START")) { pia_bridge_start(); printf("LDN_BRIDGE_STARTED\n"); return; }
+    if (!strcmp(line, "LDN_BRIDGE_START")) { ldn_join_reset(); pia_bridge_start(); printf("LDN_BRIDGE_STARTED\n"); return; }
     if (!strcmp(line, "LDN_BRIDGE_STOP")) { pia_bridge_stop(); printf("LDN_BRIDGE_STOPPED\n"); return; }
     if (!strcmp(line, "LDN_SHIM_LOG")) { trade_shim_dump_begin(); s_dumping_log = true; return; }
     if (!strcmp(line, "LDN_BRIDGE_STATUS")) {
