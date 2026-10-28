@@ -10,9 +10,10 @@ room, which the board joins.
 
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
-  reports whether the Switch accepted it. `--dry-run --out FILE` only builds it.
-  `--face-paint IMAGE` replaces the face paint with an image (the payload must have
-  face paint already; add `--with zstandard --with pillow`).
+  reports whether the Switch accepted it. `--dry-run --out FILE` only builds it. Other
+  items the Switch supplied, such as custom food, go the same way with a new transfer
+  UUID. `--face-paint IMAGE` replaces a Mii's face paint with an image (the payload must
+  have face paint already; add `--with zstandard --with pillow`).
 - `ltd_to_payload.py <mii.ltd> <template>` sends a Mii exported by
   [ShareMii](https://github.com/Star-F0rce/ShareMii): its face, face paint, name,
   pronunciation, personality, voice and birthday go into a payload the Switch supplied
@@ -41,6 +42,13 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
 - **CLTP.** NUL-terminated text messages over TCP: `CLTP SUPPLY 0x<len>` followed by
   `<len>` bytes, answered with `CLTP ACCEPT` or `CLTP REJECT` (also what declining in
   the game sends), or `CLTP CANCEL`.
+- **Refusals.** A full island also answers `CLTP REJECT`, about two seconds after the
+  supply, so `send_mii.py` cannot tell it from declining. An item whose transfer UUID
+  (`ceb3a288`) the island already has gets no answer at all: within a second the Switch
+  closes both connections and leaves the room, and the game stays on its receiving
+  screen. Face paint is such an item, nested in the Mii document with a UUID of its own,
+  so a Mii sent back to its island needs new UUIDs for its face paint as well as for the
+  Mii; its Mii ID, name and `IslandName` do not matter.
 - **Payload.** A BYAML document (version 7) whose dictionaries are keyed by 32-bit
   hashes. The outer one holds the displayed name (`25efa387`), the transfer's UUID as
   text (`ceb3a288`) and the Mii itself as a nested document (`b77378b7`). In that, the
@@ -58,5 +66,27 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   block-linear surfaces with 16-GOB blocks.
 - **Voice preset.** `a90584fa` numbers the save's presets from Boy: Custom is -1,
   Robot L (top row, fifth) is 8.
+- **More names**, from the hash table of
+  [ltd-save-editor](https://github.com/alexislours/ltd-save-editor)
+  (`scripts/lib/byml-hashes.tsv`). Every item, the Mii included, is a UGC wrapper:
+  `Category` (`689b60b2`: 6 a Mii, 7 face paint, 8 and 9 clothes), `UgcBinary`
+  (`b77378b7`) and `UgcUuid` (`ceb3a288`). The core data is `CharInfoEx`, laid out in
+  the editor's `packages/ltd-savedata/src/struct/defs/charInfoEx.ts`: `createId1` to
+  `createId4` (the Mii ID), then a name of 11 UTF-16 characters that reads `no name` in
+  received Miis (the game shows the outer `Name`), then the face. The Mii and its face
+  paint also carry where they come from: `IslandName`, `PlayerName` and their
+  `…RegionLanguageID`s.
+- **Custom items** travel in the same wrapper. Food is `Category` 12; its document has
+  `Price`, `BaseScale`, `Temperature`, `AttrTaste`, `AttrType`, the `Emission…` fields,
+  `TextureSourceType`, `IslandName` and `PlayerName`, and three zstd files: the
+  drawing (`04fff1c1`, 256×256 RGBA in the GPU's block-linear layout, 16 GOBs per block),
+  a 64 KB one (`784e7ede`, likely the ugctex) and a 96 KB one (`afa60833`). Sent back to
+  its own island with a new transfer UUID, food is accepted and shown as received from
+  another owner, as the game seems to mark every item that arrives over Local Play.
+  Clothing is `Category` 9 (as are a Mii's own clothes), with `ClothType`,
+  `ClothGender`, `ClothSeasonType`, `UgcClothGenreType`, `BaseColor` and `Price`, and
+  three zstd files: the drawing (`4b1686c3`, the same 256×256 layout), a 128 KB one
+  (`8d018ba1`) and a 64 KB one (`8e3888dd`). It goes back to its island the same way.
+  Binary values sit back to back, unaligned; the next container aligns to 4 bytes.
 
 `samples/` and `captures/` hold personal data and are not committed.
