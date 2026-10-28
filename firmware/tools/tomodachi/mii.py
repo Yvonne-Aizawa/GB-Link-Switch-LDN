@@ -7,7 +7,8 @@ template has it (island and creator, and anything not set).
     m = Mii.load("samples/supply-20261028-112535-1.bin")
     m.name, m.pronunciation = "Miku", "mee koo"
     m.gender, m.pronouns, m.voice_preset = "Female", "She", "RobotL"
-    m.birthday = (2007, 8, 31)
+    m.birthday = (2007, 8, 31)                      # or m.age = "Child" (or "Adult", or 12)
+    m.top_tucked_in = True
     m.personality["gaiety"] = 8
     m.set_face_paint("face.png")          # needs zstandard and pillow
     m.wear("Coordinate0091")              # an outfit (the witch outfit), from tables.json
@@ -23,7 +24,8 @@ foods.py <text> finds foods.
 
 Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
        <template> [--ltd FILE] [--name ...] [--pronunciation ...] [--phrase ...] [--phrase-kind ...] [--gender ...]
-       [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
+       [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D] [--age ...]
+       [--tucked-in | --no-tucked-in]
        [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
        [--take-off TYPE ...] [--clothes-from FILE] [--favourite-foods A,B] [--hated-foods A,B]
        [--habits A,B,...] [--add-habit HABIT ...] [--remove-habit HABIT ...]
@@ -64,7 +66,8 @@ ENUMS = {"Gender": GENDERS, "ClothStyle": GENDERS, "PronounType": ["He", "She", 
 FIRST = {"VoicePreset": -3, "WordKind": -1}
 # Fields whose names are not known. Foods hold the MurmurHash3 of a RSDB/FoodParam Name
 # (Crab): two all-time favourites and two hated foods, each in the order the game lists them.
-KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956,
+# IsTopsIn is the save's name for the same flag (a top tucked into the bottoms).
+KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956, "IsTopsIn": 0x7de5dfb0,
         "FavouriteFood1": 0x3cc01748, "FavouriteFood2": 0x79612bf3, "HatedFood1": 0xa95867bb, "HatedFood2": 0x85d70c73}
 PERSONALITY = ["Sociability", "Audaciousness", "Activeness", "Commonsense", "Gaiety"]
 VOICE = ["Formant", "Speed", "Intonation", "Pitch", "Tension"]
@@ -226,6 +229,27 @@ class Mii:
     @birthday.setter
     def birthday(self, ymd):
         for f, v in zip(("BirthYear", "BirthMonth", "BirthDay"), ymd): self.inner.set(f, v)
+        if ymd[0] >= 0: self.inner.set("AgeType", -1); self.inner.set("DirectAge", -1)   # the year gives the age
+
+    # A Mii's age comes from its birth year, or without one from DirectAge (years) or
+    # AgeType (the save's Invalid, Adult, Child, numbered from -1), as all captures have it.
+    @property
+    def age(self):
+        """"Adult", "Child" or a number of years; None when the birth year gives the age."""
+        if self["BirthYear"] >= 0: return None
+        if self["DirectAge"] >= 0: return self["DirectAge"]
+        return {0: "Adult", 1: "Child"}.get(self["AgeType"])
+
+    @age.setter
+    def age(self, age):
+        """Set "Adult", "Child" or a number of years instead of a birth year (month and day stay)."""
+        if isinstance(age, str) and not age.isdigit():
+            if age.capitalize() not in ("Adult", "Child"): raise ValueError("an age is Adult, Child or a number of years")
+            self.inner.set("AgeType", ["Adult", "Child"].index(age.capitalize())); self.inner.set("DirectAge", -1)
+        else: self.inner.set("DirectAge", int(age)); self.inner.set("AgeType", -1)
+        self.inner.set("BirthYear", -1)
+
+    top_tucked_in = property(lambda self: bool(self["IsTopsIn"]), lambda self, v: self.inner.set("IsTopsIn", int(bool(v))))
 
     @property
     def core(self):
@@ -451,8 +475,9 @@ class Mii:
         born = "-".join("?" if v < 0 else f"{v:0{w}}" for v, w in zip(self.birthday, (4, 2, 2)))
         lines = [f"{self.name!r} (says {self.pronunciation!r}), Mii ID {self.core[:16].hex()}"
                  + (f", phrase {self.phrase!r} ({self.phrase_kind})" if self.phrase else ""),
-                 f"  {self.gender}, {self.pronouns}, clothes {self.cloth_style}, dates {', '.join(sorted(self.loves)) or 'nobody'}",
-                 f"  born {born}, voice {self.voice_preset} {dict(self.voice)}",
+                 f"  {self.gender}, {self.pronouns}, clothes {self.cloth_style}" + (", top tucked in" if self.top_tucked_in else "")
+                 + f", dates {', '.join(sorted(self.loves)) or 'nobody'}",
+                 f"  born {born}" + (f", age {self.age}" if self.age is not None else "") + f", voice {self.voice_preset} {dict(self.voice)}",
                  f"  personality {dict(self.personality)}",
                  f"  from {self['PlayerName']!r} on {self['IslandName']!r}"
                  + (", clothes withheld (not the sender's to share)" if self.clothes_withheld else "")]
@@ -490,7 +515,9 @@ def main():
     p.add_argument("--gender", choices=GENDERS); p.add_argument("--pronouns", choices=ENUMS["PronounType"])
     p.add_argument("--cloth-style", choices=GENDERS)
     p.add_argument("--loves", help="comma-separated genders the Mii dates, or none")
-    p.add_argument("--birthday", metavar="Y-M-D")
+    p.add_argument("--birthday", metavar="Y-M-D", help="a year of -1 leaves the age to --age")
+    p.add_argument("--age", help="Adult, Child or a number of years, instead of a birth year")
+    p.add_argument("--tucked-in", action=argparse.BooleanOptionalAction, help="tuck the top into the bottoms")
     p.add_argument("--voice-preset", choices=ENUMS["VoicePreset"][2:])
     p.add_argument("--phrase-kind", choices=ENUMS["WordKind"][1:], help="when the phrase is said (default TalkStart)")
     p.add_argument("--face-paint", metavar="IMAGE", help="needs --with zstandard --with pillow")
@@ -526,6 +553,8 @@ def main():
     if a.cloth_style: m.cloth_style = a.cloth_style
     if a.loves is not None: m.loves = [] if a.loves == "none" else a.loves.split(",")
     if a.birthday: m.birthday = tuple(int(x) for x in a.birthday.split("-"))
+    if a.age: m.age = a.age
+    if a.tucked_in is not None: m.top_tucked_in = a.tucked_in
     if a.voice_preset: m.voice_preset = a.voice_preset
     if a.favourite_foods: m.favourite_foods = a.favourite_foods.split(",")
     if a.hated_foods: m.hated_foods = a.hated_foods.split(",")

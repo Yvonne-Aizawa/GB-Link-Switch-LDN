@@ -13,7 +13,7 @@ room, which the board joins.
   voice preset, personality and voice numbers, face paint, or any field by name
   (`m["TasteType"]`). `--ltd FILE` lays a ShareMii `.ltd` over the template first. On
   the command line, `--name`, `--pronunciation`, `--gender`, `--pronouns`,
-  `--cloth-style`, `--loves`, `--birthday`, `--voice-preset` and `--face-paint` set
+  `--cloth-style`, `--loves`, `--birthday`, `--age` (Adult, Child or years), `--tucked-in`, `--voice-preset` and `--face-paint` set
   those; without `--out` or `--send` it only prints the Mii. `--wear ITEM[:COLOUR]` puts
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
   `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase (`--phrase-kind` when it is said: TalkStart,
@@ -100,6 +100,10 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   in the game drops the outfit item and reuses its slot.
   When a Mii's clothes came from someone else, the Switch sends it in starter clothes and
   sets the outer `4dfe38dc` to -3 (0 otherwise; the same field is 0 in every item).
+- **Age.** With a birth year, `AgeType` and `DirectAge` are -1. Without one, the age is
+  `DirectAge` (years) or else `AgeType`: the save's Invalid, Adult, Child numbered from -1
+  (a child is 1). A .ltd has no `AgeType`.
+- **Tucked-in top.** `7de5dfb0` (the save's `IsTopsIn`) is 1 when the top is tucked in.
 - **Phrase.** Four fields that exist only once a Mii has a phrase: the text
   (`c3f3d6a6`), an empty string (`87c1aff6`, likely its pronunciation), its language
   (`51110d81`, 5 like the other language fields) and `e5da2956`, when it is said: the
