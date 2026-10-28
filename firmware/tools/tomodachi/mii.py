@@ -10,11 +10,11 @@ template has it (island and creator, and anything not set).
     m.birthday = (2007, 8, 31)
     m.personality["gaiety"] = 8
     m.set_face_paint("face.png")          # needs zstandard and pillow
-    m.wear("Coordinate0091")              # an outfit (the witch outfit); needs the romfs
+    m.wear("Coordinate0091")              # an outfit (the witch outfit), from tables.json
     m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
-    m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs; needs the romfs
+    m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs
     m.hated_foods = ["panini", "Crab"]
-    m.add_habit("Walks cutely")                     # replaces the walk it had; needs the romfs
+    m.add_habit("Walks cutely")                     # replaces the walk it had
     m.save("miku.bin")                    # new transfer UUIDs and Mii ID
 
 Fields without a property are reached by name or hash: m["TasteType"], m["HatedFood1"], m[0x7de5dfb0].
@@ -33,7 +33,7 @@ Without --out or --send it prints the Mii.
 """
 import argparse, os, struct, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import byml, send_mii
+import byml, send_mii, tables
 
 
 def murmur3(data, seed=0):
@@ -456,7 +456,7 @@ class Mii:
                  f"  personality {dict(self.personality)}",
                  f"  from {self['PlayerName']!r} on {self['IslandName']!r}"
                  + (", clothes withheld (not the sender's to share)" if self.clothes_withheld else "")]
-        if os.environ.get("TOMODACHI_ROMFS"):
+        if tables.load() or os.environ.get("TOMODACHI_ROMFS"):
             lines.append(f"  loves {', '.join(self.favourite_foods)}; hates {', '.join(self.hated_foods)}")
         names = {1: "", 7: "face paint", 8: "outfit", 9: "clothes", 16: "habit"}
         for category, _, name in self.items().values():
@@ -498,13 +498,13 @@ def main():
     p.add_argument("--take-off", metavar="TYPE", action="append", default=[],
                    help="take off the piece of a type (Headwear, Shoes, BottomsB, ...)")
     p.add_argument("--wear", metavar="ITEM[:COLOUR]", action="append", default=[],
-                   help="put on a piece or outfit (clothes.py finds them); needs the romfs and --with zstandard")
-    p.add_argument("--favourite-foods", metavar="A,B", help="the two all-time favourites (foods.py finds them); needs the romfs")
-    p.add_argument("--hated-foods", metavar="A,B", help="the two hated foods; needs the romfs")
-    p.add_argument("--habits", metavar="A,B,...", help="replace the habits, in slot order (habits.py finds them); needs the romfs")
+                   help="put on a piece or outfit (clothes.py finds them)")
+    p.add_argument("--favourite-foods", metavar="A,B", help="the two all-time favourites (foods.py finds them)")
+    p.add_argument("--hated-foods", metavar="A,B", help="the two hated foods")
+    p.add_argument("--habits", metavar="A,B,...", help="replace the habits, in slot order (habits.py finds them)")
     p.add_argument("--add-habit", metavar="HABIT", action="append", default=[], help="add a habit, replacing one of its kind")
     p.add_argument("--remove-habit", metavar="HABIT", action="append", default=[])
-    p.add_argument("--romfs", help="the game's romfs, for clothes and foods (or set TOMODACHI_ROMFS)")
+    p.add_argument("--romfs", help="read clothes from the game's romfs instead of tables.json")
     p.add_argument("--keep-ids", action="store_true", help="keep the Mii ID and transfer UUIDs")
     p.add_argument("--out", help="write the payload to this file")
     p.add_argument("--send", action="store_true", help="send it to the Switch")

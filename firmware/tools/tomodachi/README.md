@@ -22,8 +22,10 @@ room, which the board joins.
   replaces the habits (in slot order), `--add-habit` adds one in place of any of its
   kind (a Mii has one greeting, one walk, ...), `--remove-habit` takes one away.
 - `clothes.py <text>` searches the game's 1087 pieces and 347 outfits by ID or English
-  name. It and `--wear`/`--take-off` read the game's romfs (`--romfs DIR` or
-  `$TOMODACHI_ROMFS`) and need `--with zstandard`.
+  name. It, `foods.py`, `habits.py` and the clothes, food and habit options read
+  `tables.json`: the game's pieces, outfits, foods and habits with their English names.
+  `tables.py --romfs DIR` (with `--with zstandard`) regenerates it from a romfs dump;
+  without `tables.json` the tools read the romfs (`--romfs DIR` or `$TOMODACHI_ROMFS`).
 - `foods.py <text>` and `habits.py <text>` search the game's foods and habits the same
   way, for the food and habit options.
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with

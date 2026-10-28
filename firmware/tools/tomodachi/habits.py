@@ -5,7 +5,8 @@ sleeper", and an exclusion group: a Mii has at most one habit of each group, suc
 one way of greeting), display names from Mals/<language>/ReplaceMsg/Habit_Name.msbt.
 A payload refers to a habit by the MurmurHash3 of its ID.
 
-The romfs is found at --romfs, or $TOMODACHI_ROMFS.
+The tables come from tables.json when it is there; otherwise from the romfs
+($TOMODACHI_ROMFS).
 
 Usage as a script: uv run --with zstandard python -I habits.py <text>
 lists the habits whose ID or English name contains text.
@@ -17,9 +18,13 @@ from mii import plain
 
 
 class Catalog(foods.Catalog):
-    TABLE, MESSAGES = "HabitParam", "Habit_Name"
+    TABLE, MESSAGES, KEY = "HabitParam", "Habit_Name", "habits"
 
-    def group(self, habit): return plain(self.rows[habit]["ExcludeGroup"])
+    def _load(self, table):
+        self.ids = list(table)
+        self.names, self.groups = {h: n for h, (n, _) in table.items()}, {h: g for h, (_, g) in table.items()}
+
+    def group(self, habit): return self.groups[habit] if self.rows is None else plain(self.rows[habit]["ExcludeGroup"])
 
 
 def catalog(): return foods.catalog(Catalog)

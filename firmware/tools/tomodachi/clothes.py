@@ -6,14 +6,15 @@ and CoordinateClothInfo (their pieces, and the pieces' colours for each outfit c
 display names from the Mals/<language> message archive. A payload refers to a piece or
 outfit by the MurmurHash3 of its name (ClothHeadwearHatWitch, Coordinate0091).
 
-The romfs is found at --romfs, or $TOMODACHI_ROMFS.
+The tables come from tables.json when it is there; otherwise, or with --romfs, from the
+romfs (--romfs, or $TOMODACHI_ROMFS).
 
 Usage as a script: uv run --with zstandard python -I clothes.py <text>
 lists the pieces and outfits whose name or ID contains text.
 """
 import os, struct, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import byml
+import byml, tables
 from mii import murmur3
 
 TYPES = ["Headwear", "Tops", "Topslong", "BottomsA", "BottomsB", "Shoes", "Accessory", "All"]
@@ -67,8 +68,15 @@ def msbt(data):
 
 class Catalog:
     def __init__(self, romfs=None, language="EUen"):
-        romfs = romfs or os.environ.get("TOMODACHI_ROMFS")
-        if not romfs: raise SystemExit("Where is the game's romfs? Pass --romfs or set TOMODACHI_ROMFS.")
+        saved = None if romfs else tables.load()
+        if saved:
+            self.type = {p: t for p, (t, _) in saved["pieces"].items()}
+            self.names = {p: n for p, (_, n) in saved["pieces"].items()} | {o: n for o, (n, _, _) in saved["outfits"].items()}
+            self.outfits = {o: (pieces, colours) for o, (_, pieces, colours) in saved["outfits"].items()}
+        else: self._read(tables.romfs_of(romfs), language)
+        self.by_hash = {murmur3(n.encode()): n for n in [*self.type, *self.outfits]}
+
+    def _read(self, romfs, language):
         import zstandard
         read = lambda path: zstandard.ZstdDecompressor().decompressobj().decompress(open(os.path.join(romfs, path), "rb").read())
         table = lambda name: byml.Reader(read(f"RSDB/{name}.Product.100.rstbl.byml.zs")).root
@@ -86,7 +94,6 @@ class Catalog:
             pieces = {t: by_hash[ci[t + "Hash"].value] for t in TYPES if ci[t + "Hash"].value}
             colours = [{t: c[t].value for t in pieces} for c in ci["Color"]]
             self.outfits[name] = (pieces, colours)
-        self.by_hash = {murmur3(n.encode()): n for n in [*self.type, *self.outfits]}
 
     def name(self, item): return self.names.get(item, item)
 

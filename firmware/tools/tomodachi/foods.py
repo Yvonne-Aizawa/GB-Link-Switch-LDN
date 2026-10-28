@@ -4,30 +4,36 @@ Foods come from RSDB/FoodParam (their IDs, such as Tofu or Sundepokku), display 
 from Mals/<language>/ReplaceMsg/Food_Name.msbt. A payload refers to a food by the
 MurmurHash3 of its ID.
 
-The romfs is found at --romfs, or $TOMODACHI_ROMFS.
+The tables come from tables.json when it is there; otherwise, or with --romfs, from the
+romfs (--romfs, or $TOMODACHI_ROMFS).
 
 Usage as a script: uv run --with zstandard python -I foods.py <text>
 lists the foods whose ID or English name contains text.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import byml
+import byml, tables
 from clothes import msbt, sarc
 from mii import murmur3
 
 
 class Catalog:
-    TABLE, MESSAGES = "FoodParam", "Food_Name"   # habits.py reads habits the same way
+    TABLE, MESSAGES, KEY = "FoodParam", "Food_Name", "foods"   # habits.py reads habits the same way
 
     def __init__(self, romfs=None, language="EUen"):
-        romfs = romfs or os.environ.get("TOMODACHI_ROMFS")
-        if not romfs: raise SystemExit("Where is the game's romfs? Pass --romfs or set TOMODACHI_ROMFS.")
+        saved, self.rows = None if romfs else tables.load(), None
+        if saved: self._load(saved[self.KEY])
+        else: self._read(tables.romfs_of(romfs), language)
+        self.by_hash = {murmur3(f.encode()): f for f in self.ids}
+
+    def _load(self, table): self.ids, self.names = list(table), dict(table)
+
+    def _read(self, romfs, language):
         import zstandard
         read = lambda path: zstandard.ZstdDecompressor().decompressobj().decompress(open(os.path.join(romfs, path), "rb").read())
         self.rows = {row["Name"]: row for row in byml.Reader(read(f"RSDB/{self.TABLE}.Product.100.rstbl.byml.zs")).root}
         self.ids = list(self.rows)
         self.names = msbt(sarc(read(f"Mals/{language}.Product.100.sarc.zs"))[f"ReplaceMsg/{self.MESSAGES}.msbt"])
-        self.by_hash = {murmur3(f.encode()): f for f in self.ids}
 
     def name(self, food): return self.names.get(food) or food
 
@@ -50,7 +56,7 @@ _catalogs = {}
 
 
 def catalog(cls=Catalog):
-    """The catalog from $TOMODACHI_ROMFS, read once."""
+    """The catalog from tables.json (or $TOMODACHI_ROMFS), read once."""
     if cls not in _catalogs: _catalogs[cls] = cls()
     return _catalogs[cls]
 
