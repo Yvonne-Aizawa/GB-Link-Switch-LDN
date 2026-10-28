@@ -17,24 +17,28 @@ from mii import murmur3
 
 
 class Catalog:
+    TABLE, MESSAGES = "FoodParam", "Food_Name"   # habits.py reads habits the same way
+
     def __init__(self, romfs=None, language="EUen"):
         romfs = romfs or os.environ.get("TOMODACHI_ROMFS")
         if not romfs: raise SystemExit("Where is the game's romfs? Pass --romfs or set TOMODACHI_ROMFS.")
         import zstandard
         read = lambda path: zstandard.ZstdDecompressor().decompressobj().decompress(open(os.path.join(romfs, path), "rb").read())
-        self.ids = [row["Name"] for row in byml.Reader(read("RSDB/FoodParam.Product.100.rstbl.byml.zs")).root]
-        self.names = msbt(sarc(read(f"Mals/{language}.Product.100.sarc.zs"))["ReplaceMsg/Food_Name.msbt"])
+        self.rows = {row["Name"]: row for row in byml.Reader(read(f"RSDB/{self.TABLE}.Product.100.rstbl.byml.zs")).root}
+        self.ids = list(self.rows)
+        self.names = msbt(sarc(read(f"Mals/{language}.Product.100.sarc.zs"))[f"ReplaceMsg/{self.MESSAGES}.msbt"])
         self.by_hash = {murmur3(f.encode()): f for f in self.ids}
 
     def name(self, food): return self.names.get(food) or food
 
     def find(self, text):
-        """The ID of a food named by its ID or English name, either in any case."""
+        """The ID of a food (or habit) named by its ID or English name, either in any case."""
         hits = [f for f in self.ids if text.lower() in (f.lower(), self.name(f).lower())]
         if len(hits) == 1: return hits[0]
         if hits: raise ValueError(f"{text!r} could be {', '.join(hits)}; give the ID")
         near = [self.name(f) for f, _ in self.search(text)][:8]
-        raise ValueError(f"no food {text!r}" + (f"; did you mean {', '.join(near)}?" if near else "; foods.py <text> searches"))
+        what = self.TABLE.removesuffix("Param").lower()
+        raise ValueError(f"no {what} {text!r}" + (f"; did you mean {', '.join(near)}?" if near else f"; {what}s.py <text> searches"))
 
     def search(self, text):
         """Foods whose ID or display name contains text, as (ID, name)."""
@@ -42,14 +46,13 @@ class Catalog:
         return [(f, self.name(f)) for f in self.ids if text in f.lower() or text in self.name(f).lower()]
 
 
-_catalog = None
+_catalogs = {}
 
 
-def catalog():
+def catalog(cls=Catalog):
     """The catalog from $TOMODACHI_ROMFS, read once."""
-    global _catalog
-    _catalog = _catalog or Catalog()
-    return _catalog
+    if cls not in _catalogs: _catalogs[cls] = cls()
+    return _catalogs[cls]
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 A payload can't be made from nothing yet: start from one the Switch sent (a template,
 supply-*.bin), or from a ShareMii .ltd laid over one. What isn't changed stays as the
-template has it (clothes, habits, island and creator).
+template has it (island and creator, and anything not set).
 
     m = Mii.load("samples/supply-20261028-112535-1.bin")
     m.name, m.pronunciation = "Miku", "mee koo"
@@ -14,6 +14,7 @@ template has it (clothes, habits, island and creator).
     m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
     m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs; needs the romfs
     m.hated_foods = ["panini", "Crab"]
+    m.add_habit("Walks cutely")                     # replaces the walk it had; needs the romfs
     m.save("miku.bin")                    # new transfer UUIDs and Mii ID
 
 Fields without a property are reached by name or hash: m["TasteType"], m["HatedFood1"], m[0x7de5dfb0].
@@ -25,6 +26,7 @@ Usage as a script: uv run --with pyserial --with cryptography python -I mii.py
        [--pronouns ...] [--cloth-style ...] [--loves ...] [--birthday Y-M-D]
        [--voice-preset ...] [--face-paint IMAGE] [--wear ITEM[:COLOUR] ...]
        [--take-off TYPE ...] [--clothes-from FILE] [--favourite-foods A,B] [--hated-foods A,B]
+       [--habits A,B,...] [--add-habit HABIT ...] [--remove-habit HABIT ...]
        [--romfs DIR]
        [--out FILE] [--send] [--seconds N]
 Without --out or --send it prints the Mii.
@@ -100,11 +102,12 @@ REPLACES = {"All": {"Tops", "Topslong", "BottomsA", "BottomsB", "Shoes"}, "Topsl
             "Tops": {"Topslong", "All"}, "BottomsA": {"Topslong", "All"}, "BottomsB": {"All"}, "Shoes": {"All"}}
 
 
-def item_doc(category, item, name, colour):
-    """A clothing or outfit item's document, as the game writes them."""
-    return byml.Writer(byml.Hash32([[ITEM_ID, byml.Value(byml.UINT, murmur3(item.encode()))], [send_mii.NAME, name],
-                                    [ITEM_FLAG, byml.Value(byml.INT, 0)], [CATEGORY, byml.Value(byml.INT, category)],
-                                    [COLOUR, byml.Value(byml.INT, colour)]]), version=7).build()
+def item_doc(category, item, name, colour=None):
+    """A clothing, outfit or habit item's document, as the game writes them (habits have no colour)."""
+    fields = [[ITEM_ID, byml.Value(byml.UINT, murmur3(item.encode()))], [send_mii.NAME, name],
+              [ITEM_FLAG, byml.Value(byml.INT, 0)], [CATEGORY, byml.Value(byml.INT, category)]]
+    if colour is not None: fields.append([COLOUR, byml.Value(byml.INT, colour)])
+    return byml.Writer(byml.Hash32(fields), version=7).build()
 
 
 def remove_key(doc, key):
@@ -297,6 +300,38 @@ class Mii:
         return [items[order[self[f]]][2] for f in HABIT_INDEX
                 if f in self.inner.root.items and 0 <= self[f] < len(order)]
 
+    def _habit_ids(self, catalog):
+        order, items = self._order(), self.items()
+        return [catalog.by_hash.get(items[order[self[f]]][1], items[order[self[f]]][1]) for f in HABIT_INDEX
+                if f in self.inner.root.items and 0 <= self[f] < len(order)]
+
+    def set_habits(self, habits, catalog=None):
+        """Give the Mii these habits (English names or IDs), in slot order, at most one of
+        each kind (one way of greeting, of walking, ...) and seven in all."""
+        import habits as habit_table
+        catalog = catalog or habit_table.catalog()
+        ids = [catalog.find(h) for h in habits]
+        groups = [catalog.group(h) for h in ids]
+        clash = [catalog.name(h) for h, g in zip(ids, groups) if groups.count(g) > 1]
+        if clash: raise ValueError(f"{' and '.join(clash)} are the same kind of habit; a Mii has one of each kind")
+        self._dress(lambda kind: False, [], [item_doc(HABIT, h, catalog.name(h)) for h in ids])
+
+    def add_habit(self, habit, catalog=None):
+        """Add a habit after the others, replacing the one of its kind if there is one."""
+        import habits as habit_table
+        catalog = catalog or habit_table.catalog()
+        new = catalog.find(habit)
+        held = [h for h in self._habit_ids(catalog) if catalog.group(h) != catalog.group(new)]
+        self.set_habits(held + [new], catalog)
+
+    def remove_habit(self, habit, catalog=None):
+        """Take a habit away; the ones after it move up a slot."""
+        import habits as habit_table
+        catalog = catalog or habit_table.catalog()
+        gone, held = catalog.find(habit), self._habit_ids(catalog)
+        if gone not in held: raise ValueError(f"the Mii has no habit {catalog.name(gone)!r}")
+        self.set_habits([h for h in held if h != gone], catalog)
+
     def clothes(self, catalog=None):
         """The outfit and pieces worn, [(kind, item, colour, name)]: kind a clothing type or
         Outfit, item the ID name when a catalog (clothes.Catalog) knows it, else its hash."""
@@ -308,24 +343,33 @@ class Mii:
             out.append((kinds[key], catalog.by_hash.get(item, item) if catalog else item, colour, name))
         return out
 
-    def _dress(self, takes_off, put_on):
+    def _dress(self, takes_off, put_on, habits=None):
         """Take off the items whose kind takes_off(kind) holds, put on put_on [(kind, item
-        document)], and point the index fields at where everything is now. Emptied slots
-        are reused in place, as the game does, so the other items keep their numbers."""
+        document)], replace the habits with habits [item document] in slot order if given,
+        and point the index fields at where everything is now. Emptied slots are reused in
+        place, as the game does, so the other items keep their numbers."""
         root, order, kinds = self.inner.root, self._order(), self._kinds()
         stray = [items[2] for k, items in self.items().items() if items[0] in (OUTFIT, CLOTHING) and k not in kinds]
         if stray: raise ValueError(f"no index field points at {', '.join(map(repr, stray))}")
-        habits = {f: order[self[f]] for f in HABIT_INDEX if f in root.items and 0 <= self[f] < len(order)}
+        held = [order[self[f]] for f in HABIT_INDEX if f in root.items and 0 <= self[f] < len(order)]
         gone = [k for k in order if kinds.get(k, "FacePaint") != "FacePaint" and takes_off(kinds[k])]
-        for kind, doc in put_on:
+        if habits is not None: gone += held; held = []
+        if habits and len(habits) > len(HABIT_INDEX): raise ValueError(f"a Mii has at most {len(HABIT_INDEX)} habits")
+        for kind, doc in put_on + [("Habit", doc) for doc in habits or []]:
             key = gone.pop(0) if gone else next((k for k in SLOTS if k not in root.items), None)
-            if key is None: raise ValueError(f"no free item slot for {len(put_on)} items (habits fill the rest)")
+            if key is None: raise ValueError(f"all {len(SLOTS)} item slots are full")
             root.set(key, doc); kinds[key] = kind
-        for key in gone: remove_key(root, key); del kinds[key]
+            if kind == "Habit": held.append(key)
+        for key in gone: remove_key(root, key); kinds.pop(key, None)
         order = self._order()
         for kind, field in INDEX.items():
             self.inner.set(field, next((i for i, k in enumerate(order) if kinds.get(k) == kind), -1))
-        for field, key in habits.items(): self.inner.set(field, order.index(key) if key in order else -1)
+        for i, field in enumerate(HABIT_INDEX):
+            if field in root.items or i < len(held): self.inner.set(field, order.index(held[i]) if i < len(held) else -1)
+        if habits is not None:   # a used slot's flag is 1; an unused one has none
+            for i, flag in enumerate(HABIT_USED):
+                if i < len(held): root.set(flag, byml.Value(byml.BOOL, 1))
+                elif flag in root.items: remove_key(root, flag)
         self.inner.set(ITEM_COUNT, len(order))
 
     def wear(self, item, colour=0, catalog=None):
@@ -457,6 +501,9 @@ def main():
                    help="put on a piece or outfit (clothes.py finds them); needs the romfs and --with zstandard")
     p.add_argument("--favourite-foods", metavar="A,B", help="the two all-time favourites (foods.py finds them); needs the romfs")
     p.add_argument("--hated-foods", metavar="A,B", help="the two hated foods; needs the romfs")
+    p.add_argument("--habits", metavar="A,B,...", help="replace the habits, in slot order (habits.py finds them); needs the romfs")
+    p.add_argument("--add-habit", metavar="HABIT", action="append", default=[], help="add a habit, replacing one of its kind")
+    p.add_argument("--remove-habit", metavar="HABIT", action="append", default=[])
     p.add_argument("--romfs", help="the game's romfs, for clothes and foods (or set TOMODACHI_ROMFS)")
     p.add_argument("--keep-ids", action="store_true", help="keep the Mii ID and transfer UUIDs")
     p.add_argument("--out", help="write the payload to this file")
@@ -491,6 +538,9 @@ def main():
         for spec in a.wear:
             item, _, colour = spec.partition(":")
             m.wear(item, int(colour or 0), catalog)
+    if a.habits is not None: m.set_habits([h for h in a.habits.split(",") if h])
+    for habit in a.remove_habit: m.remove_habit(habit)
+    for habit in a.add_habit: m.add_habit(habit)
     if not (a.out or a.send): print(m); return
     path = a.out or os.path.join(tempfile.mkdtemp(prefix="mii-"), "payload.bin")
     data = m.save(path, not a.keep_ids)

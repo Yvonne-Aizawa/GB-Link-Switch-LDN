@@ -18,12 +18,14 @@ room, which the board joins.
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
   `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase (`--phrase-kind` when it is said: TalkStart,
   TalkEnd, Phrase, TalkInSleep, ...). `--favourite-foods A,B` and `--hated-foods A,B` set
-  the two all-time favourite and two hated foods by English name or ID. Habits come from
-  the template.
+  the two all-time favourite and two hated foods by English name or ID. `--habits A,B,...`
+  replaces the habits (in slot order), `--add-habit` adds one in place of any of its
+  kind (a Mii has one greeting, one walk, ...), `--remove-habit` takes one away.
 - `clothes.py <text>` searches the game's 1087 pieces and 347 outfits by ID or English
   name. It and `--wear`/`--take-off` read the game's romfs (`--romfs DIR` or
   `$TOMODACHI_ROMFS`) and need `--with zstandard`.
-- `foods.py <text>` searches the game's foods the same way, for the food options.
+- `foods.py <text>` and `habits.py <text>` search the game's foods and habits the same
+  way, for the food and habit options.
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
   reports whether the Switch accepted it. `--dry-run --out FILE` only builds it. Other
