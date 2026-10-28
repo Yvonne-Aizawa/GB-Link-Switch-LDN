@@ -444,8 +444,36 @@
             </label>
             <div id="mii-outgoing" hidden>
                 <p class="fine" id="mii-outgoing-about"></p>
-                <p class="gift-pick"><label for="mii-name">Name</label> <input type="text" id="mii-name" maxlength="30" spellcheck="false" autocomplete="off"></p>
-                <p class="fine warn" id="mii-name-warning" hidden>The game allows 13 characters when you name a Mii. It shows longer names but may cut them.</p>
+                <div class="mii-form">
+                    <label class="mii-row"><span>Name</span> <input type="text" id="mii-name" maxlength="30" spellcheck="false" autocomplete="off"></label>
+                    <p class="fine warn" id="mii-name-warning" hidden>The game allows 13 characters when you name a Mii. It shows longer names but may cut them.</p>
+                    <div id="mii-fields" hidden>
+                        <label class="mii-row" data-needs="pronunciation"><span>Pronunciation</span> <input type="text" data-field="pronunciation" maxlength="30" spellcheck="false" autocomplete="off" placeholder="Said as written"></label>
+                        <label class="mii-row"><span>Phrase</span> <input type="text" id="mii-phrase" maxlength="30" spellcheck="false" autocomplete="off" placeholder="None"></label>
+                        <label class="mii-row" data-needs="gender"><span>Gender</span> <select data-field="gender"><option value="0">Male</option><option value="1">Female</option><option value="2">Non-binary</option></select></label>
+                        <label class="mii-row" data-needs="pronouns"><span>Pronouns</span> <select data-field="pronouns"><option value="0">He</option><option value="1">She</option><option value="2">They</option></select></label>
+                        <label class="mii-row" data-needs="clothStyle"><span>Clothing style</span> <select data-field="clothStyle"><option value="0">Male</option><option value="1">Female</option><option value="2">Non-binary</option></select></label>
+                        <div class="mii-row" data-needs="loves"><span>Dates</span>
+                            <span class="mii-checks" id="mii-loves">
+                                <label class="check"><input type="checkbox" data-bit="0"> Male</label>
+                                <label class="check"><input type="checkbox" data-bit="1"> Female</label>
+                                <label class="check"><input type="checkbox" data-bit="2"> Non-binary</label>
+                            </span>
+                        </div>
+                        <div class="mii-row" data-needs="month"><span>Birthday</span>
+                            <span class="mii-date">
+                                <select data-field="month" aria-label="Month"></select>
+                                <input type="number" data-field="day" min="1" max="31" aria-label="Day">
+                                <input type="number" id="mii-year" min="1900" max="2100" placeholder="Year" aria-label="Year">
+                            </span>
+                        </div>
+                        <p class="mii-group">Personality</p>
+                        <div id="mii-personality"></div>
+                        <p class="mii-group">Voice</p>
+                        <label class="mii-row" data-needs="voicePreset"><span>Preset</span> <select id="mii-voice-preset"></select></label>
+                        <div id="mii-voice"></div>
+                    </div>
+                </div>
                 <div class="actions">
                     <button class="primary" id="mii-send">Send to the Switch</button>
                 </div>
@@ -462,7 +490,7 @@
                 <ol class="fine">
                     <li>In Tomodachi Life, open Local Play and press <em>Look for another player</em>, then press Start here. The page joins as the other player.</li>
                     <li>To keep a Mii, send it from the Switch: the page accepts it and lists it under <em>From the Switch</em>. Download it to send it again later.</li>
-                    <li>To send one, drop it on this card, rename it if you like, and press <em>Send to the Switch</em>. The island takes it as a new resident; a full island declines it.</li>
+                    <li>To send one, drop it on this card, change its name, voice, personality or other details if you like, and press <em>Send to the Switch</em>. The island takes it as a new resident; a full island declines it.</li>
                     <li>Custom food and clothing the Switch sent go back the same way.</li>
                 </ol>
             </details>

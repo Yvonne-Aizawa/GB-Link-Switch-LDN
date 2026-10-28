@@ -50,7 +50,9 @@ the board restarts and the group opens again.
    stored keys (`LDN_JOIN`) and the page speaks the game's protocol over `LDN_TAP` and
    `LDN_ETH` (`js/mii/`, a port of `firmware/tools/tomodachi/`). Whatever the Switch sends
    is accepted and listed for download; a `.bin` dropped on the card goes back with new
-   transfer IDs and a new Mii ID, optionally renamed. `node tests/mii.mjs` runs it against
+   transfer IDs and a new Mii ID. Its name can be changed, and for a Mii its
+   pronunciation, phrase, gender, pronouns, clothing style, who it dates, birthday,
+   personality and voice (`js/mii/mii.js`, a port of `mii.py`). `node tests/mii.mjs` runs it against
    a stand-in Switch.
 
 Keep the tab visible while playing. Browsers slow down hidden tabs, and the game drops a

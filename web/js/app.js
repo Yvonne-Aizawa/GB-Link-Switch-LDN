@@ -17,7 +17,8 @@ import { spriteUrl, spriteFallbackUrl } from './trade/sprites.js';
 import { CancelledError, TradeSession } from './trade/session.js';
 import { POOL_SERVER, PoolClient } from './trade/pool.js';
 import { LINK_FIRMWARE, MiiLink } from './mii/link.js';
-import { MAX_NAME, describe as describePayload, prepare as preparePayload } from './mii/payload.js';
+import { MAX_NAME, describe as describePayload } from './mii/payload.js';
+import { CUSTOM_VOICE, PERSONALITY, Payload, VOICE_PRESETS, VOICE_RANGES } from './mii/mii.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -115,8 +116,7 @@ const state = {
     miiStatus: null,        // { stage, detail } from the link
     miiNote: null,          // { text, tone }
     miiStopping: false,
-    miiOutgoing: null,      // what to send: { bytes, about, fileName }
-    miiName: '',            // the name it goes with
+    miiOutgoing: null,      // what to send, edited on the card: { payload, about, fileName }
     miiSendNote: null,      // { text, tone } about the last send
     miiReceived: [],        // what the Switch sent while the page is open, newest first: { bytes, about, time }
     bridgeTimer: null,
@@ -1749,9 +1749,9 @@ async function onMiiFile(file) {
 function chooseOutgoing(bytes, fileName) {
     try {
         const about = describePayload(bytes);
-        state.miiOutgoing = { bytes, about, fileName };
-        state.miiName = about.name;
+        state.miiOutgoing = { payload: new Payload(bytes), about, fileName };
         state.miiSendNote = null;
+        fillMiiForm();
         log('mii', `chose ${fileName} to send`);
     } catch (error) {
         state.miiSendNote = { text: `${fileName} is not something Tomodachi Life sent (${describe(error)}).`, tone: 'bad' };
@@ -1762,13 +1762,115 @@ function chooseOutgoing(bytes, fileName) {
 function miiSend() {
     const outgoing = state.miiOutgoing, link = state.mii;
     if (!outgoing || !link?.ready) return;
-    const name = state.miiName.trim();
+    const payload = outgoing.payload;
+    payload.name = payload.name.trim() || outgoing.about.name;
     try {
-        const payload = preparePayload(outgoing.bytes, { name: name && name !== outgoing.about.name ? name : null });
-        state.miiSendNote = { text: '', tone: '', name: name || outgoing.about.name || 'it' };
-        link.send(payload);
+        const bytes = payload.build();
+        state.miiSendNote = { text: '', tone: '', name: payload.name || 'it' };
+        link.send(bytes);
     } catch (error) {
         state.miiSendNote = { text: `It could not be sent: ${describe(error)}`, tone: 'bad' };
+    }
+    renderMii();
+}
+
+// The sliders and month names, made once.
+const VOICE_SLIDERS = [
+    { key: 'speed', label: 'Speed' }, { key: 'pitch', label: 'Pitch' }, { key: 'formant', label: 'Depth' },
+    { key: 'tension', label: 'Delivery' }, { key: 'intonation', label: 'Tone' },
+];
+
+function miiSlider(key, label, [min, max], low = '', high = '') {
+    const row = document.createElement('label');
+    row.className = 'mii-row';
+    row.dataset.needs = key;
+    const name = document.createElement('span');
+    name.textContent = label;
+    const slider = document.createElement('span');
+    slider.className = 'mii-slider';
+    const input = Object.assign(document.createElement('input'), { type: 'range', min, max, step: 1 });
+    input.dataset.field = key;
+    const ends = [low, high].map((text) => Object.assign(document.createElement('span'), { textContent: text }));
+    const value = document.createElement('output');
+    slider.append(ends[0], input, ends[1], value);
+    row.append(name, slider);
+    return row;
+}
+
+function buildMiiForm() {
+    $('mii-personality').replaceChildren(...PERSONALITY.map((p) => miiSlider(p.key, p.label, [1, 8], p.low, p.high)));
+    $('mii-voice').replaceChildren(...VOICE_SLIDERS.map((v) => miiSlider(v.key, v.label, VOICE_RANGES[v.key])));
+    const month = document.querySelector('#mii-fields [data-field="month"]');
+    month.replaceChildren(...Array.from({ length: 12 }, (_, i) => new Option(new Date(2000, i, 1).toLocaleString([], { month: 'long' }), i + 1)));
+    $('mii-voice-preset').replaceChildren(new Option('Custom', CUSTOM_VOICE), ...VOICE_PRESETS.map((v, i) => new Option(v.name, i)));
+}
+
+// The form shows what the payload holds; a Mii's own fields only for a Mii, and only
+// those it has.
+function fillMiiForm() {
+    const outgoing = state.miiOutgoing;
+    if (!outgoing) return;
+    const payload = outgoing.payload;
+    $('mii-name').value = payload.name;
+    $('mii-fields').hidden = !payload.isMii;
+    if (!payload.isMii) return;
+    for (const row of $('mii-fields').querySelectorAll('[data-needs]')) row.hidden = !payload.has(row.dataset.needs);
+    for (const input of $('mii-fields').querySelectorAll('[data-field]')) {
+        if (payload.has(input.dataset.field)) input.value = payload.get(input.dataset.field);
+    }
+    const year = payload.has('year') ? payload.get('year') : -1;
+    $('mii-year').value = year < 0 ? '' : year;
+    $('mii-phrase').value = payload.phrase;
+    const loves = payload.has('loves') ? payload.get('loves') : 0;
+    for (const box of $('mii-loves').querySelectorAll('[data-bit]')) box.checked = Boolean(loves >> Number(box.dataset.bit) & 1);
+    $('mii-voice-preset').value = payload.has('voicePreset') ? payload.get('voicePreset') : CUSTOM_VOICE;
+    showSliderValues();
+}
+
+function showSliderValues() {
+    for (const input of $('mii-fields').querySelectorAll('input[type="range"]')) input.nextElementSibling.nextElementSibling.value = input.value;
+}
+
+// One edit on the form, into the payload.
+function onMiiEdit(event) {
+    const outgoing = state.miiOutgoing, target = event.target;
+    if (!outgoing) return;
+    const payload = outgoing.payload;
+    try {
+        if (target.id === 'mii-name') {
+            // The game says the name itself unless told otherwise; a pronunciation that
+            // was the old name follows it.
+            const said = document.querySelector('#mii-fields [data-field="pronunciation"]');
+            if (payload.isMii && payload.has('pronunciation') && payload.get('pronunciation') === payload.name) {
+                payload.set('pronunciation', target.value);
+                said.value = target.value;
+            }
+            payload.name = target.value;
+        } else if (target.id === 'mii-phrase') payload.phrase = target.value;
+        else if (target.id === 'mii-year') {
+            const year = target.value === '' ? -1 : Number(target.value);
+            if (Number.isInteger(year)) payload.set('year', year);
+        } else if (target.dataset.bit !== undefined) {
+            let bits = 0;
+            for (const box of $('mii-loves').querySelectorAll('[data-bit]')) if (box.checked) bits |= 1 << Number(box.dataset.bit);
+            payload.set('loves', bits);
+        } else if (target.id === 'mii-voice-preset') {
+            payload.setVoicePreset(Number(target.value));
+            fillMiiForm();
+        } else if (target.dataset.field) {
+            const key = target.dataset.field;
+            const value = target.type === 'text' ? target.value : Number(target.value);
+            if (key === 'day' && !(Number.isInteger(value) && value >= 1 && value <= 31)) return;
+            payload.set(key, value);
+            // Moving a voice slider makes the voice a custom one, as in the game.
+            if (key in VOICE_RANGES && payload.has('voicePreset') && payload.get('voicePreset') !== CUSTOM_VOICE) {
+                payload.set('voicePreset', CUSTOM_VOICE);
+                $('mii-voice-preset').value = CUSTOM_VOICE;
+            }
+            showSliderValues();
+        }
+    } catch (error) {
+        state.miiSendNote = { text: describe(error), tone: 'bad' };
     }
     renderMii();
 }
@@ -1823,8 +1925,7 @@ function renderMii() {
     $('mii-outgoing').hidden = !outgoing;
     if (outgoing) {
         $('mii-outgoing-about').textContent = `${outgoing.fileName}: ${aboutLine(outgoing.about)}`;
-        if ($('mii-name').value !== state.miiName) $('mii-name').value = state.miiName;
-        $('mii-name-warning').hidden = [...state.miiName.trim()].length <= MAX_NAME;
+        $('mii-name-warning').hidden = [...outgoing.payload.name.trim()].length <= MAX_NAME;
         $('mii-send').disabled = !state.mii?.ready;
         $('mii-send').title = state.mii?.ready ? '' : running ? 'Wait until the Switch is connected.' : 'Press Start first.';
     }
@@ -2500,7 +2601,8 @@ function wireUp() {
     $('mii-start').addEventListener('click', miiStart);
     $('mii-stop').addEventListener('click', () => miiStop());
     $('mii-send').addEventListener('click', miiSend);
-    $('mii-name').addEventListener('input', (event) => { state.miiName = event.target.value; renderMii(); });
+    buildMiiForm();
+    $('mii-outgoing').addEventListener('input', onMiiEdit);
     $('bridge-start').addEventListener('click', onBridgeStart);
     $('bridge-stop').addEventListener('click', () => stopBridge());
     $('wiring-check').addEventListener('click', onWiringCheck);
