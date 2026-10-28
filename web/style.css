@@ -331,3 +331,9 @@ footer p { color: var(--muted); font-size: 0.82rem; }
 .gift-pick label { color: var(--muted); font-size: 0.9rem; }
 #gift-event { flex: 1 1 18em; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: inherit; font: inherit; }
 #gift-description { margin-top: 12px; }
+
+/* Tomodachi Life: what to send, and what the Switch sent. */
+.mii-heading { margin: 22px 0 0; font-size: 0.75rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+#mii-name { flex: 1 1 14em; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: inherit; font: inherit; }
+#mii-outgoing-about { margin-top: 12px; }
+.backups-list li .backup-actions { display: flex; gap: 8px; flex-wrap: wrap; }

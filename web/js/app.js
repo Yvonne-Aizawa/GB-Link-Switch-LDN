@@ -1,6 +1,6 @@
 // Page controller. ESP32 board card first, then the cards of the path picked at the top
-// (PATHS): GBA + Switch (adapter and play cards), Switch only (trade card), Celio or Mystery
-// Gift. Board and adapter cards render from one view object each: status line, optional
+// (PATHS): GBA + Switch (adapter and play cards), Switch only (trade card), Celio, Mystery
+// Gift or Tomodachi Life. Board and adapter cards render from one view object each: status line, optional
 // hint, at most one primary action.
 
 import { EspDevice, ESP_FILTERS, FAST_BAUD, newer, reopenPort, sleep } from './esp.js';
@@ -16,6 +16,8 @@ import { parse as parsePk3 } from './trade/pk3.js';
 import { spriteUrl, spriteFallbackUrl } from './trade/sprites.js';
 import { CancelledError, TradeSession } from './trade/session.js';
 import { POOL_SERVER, PoolClient } from './trade/pool.js';
+import { LINK_FIRMWARE, MiiLink } from './mii/link.js';
+import { MAX_NAME, describe as describePayload, prepare as preparePayload } from './mii/payload.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -43,7 +45,7 @@ const RESTART_REASONS = {
 
 const state = {
     manifest: null,
-    path: 'gba',            // shown path: gba | switch | celio | gift
+    path: 'gba',            // shown path: gba | switch | celio | gift | mii
 
     esp: null,
     espPort: null,          // picked port that failed to attach
@@ -109,6 +111,14 @@ const state = {
     giftRestoreNote: null,  // why the chosen .sav can't be restored
     giftNote: null,         // { text, tone }
     giftClosing: false,     // Stop pressed: waiting for the board to close its room and restart
+    mii: null,              // MiiLink while the page is in Tomodachi Life's Local Play
+    miiStatus: null,        // { stage, detail } from the link
+    miiNote: null,          // { text, tone }
+    miiStopping: false,
+    miiOutgoing: null,      // what to send: { bytes, about, fileName }
+    miiName: '',            // the name it goes with
+    miiSendNote: null,      // { text, tone } about the last send
+    miiReceived: [],        // what the Switch sent while the page is open, newest first: { bytes, about, time }
     bridgeTimer: null,
     bridgeNote: null,
     wiringNote: null,
@@ -373,6 +383,7 @@ async function dropEsp(problem = null) {
     if (state.bridge) await stopBridge('The ESP32 board went away.');
     if (state.celio?.running) await celioLeave({ text: 'The ESP32 board went away, so the Celio session ended.', tone: 'bad' });
     if (state.gift) await giftStop({ text: 'The ESP32 board went away, so the Mystery Gift stopped.', tone: 'bad' });
+    if (state.mii) await miiStop({ text: 'The ESP32 board went away, so Local Play stopped.', tone: 'bad' });
     clearInterval(state.pollTimer);
     state.esp = null;
     state.keys = null;
@@ -388,7 +399,7 @@ async function dropEsp(problem = null) {
 // changes are logged.
 let lastRoomLine = '';
 function onEspLine(line) {
-    if (line.startsWith('LDN_HELLO') || line.startsWith('LDN_ADV ')) return;
+    if (line.startsWith('LDN_HELLO') || line.startsWith('LDN_ADV ') || line.startsWith('LDN_TAP_FRAME ')) return;
     if (line.startsWith('LDN_ROOM ')) {
         if (line === lastRoomLine) return;
         lastRoomLine = line;
@@ -554,7 +565,7 @@ function keysLine() {
 
 async function pollSession() {
     const esp = state.esp;
-    if (!esp?.attached || state.espPhase !== 'idle' || state.trade) return;
+    if (!esp?.attached || state.espPhase !== 'idle' || state.trade || state.mii) return;
     try {
         state.session = await esp.bridgeStatus();
         if (state.polls++ % 3 === 0) state.signal = await esp.signal();
@@ -1063,8 +1074,8 @@ async function onWiringCheck() {
 // ---------------------------------------------------------------- the page's two trees
 
 // gba: GBA linked with the Switch (adapter and play cards). switch: Switch alone (trade
-// card). celio: online. gift: Mystery Gift. Board setup is the same for all.
-const PATHS = ['gba', 'switch', 'celio', 'gift'];
+// card). celio: online. gift: Mystery Gift. mii: Tomodachi Life. Board setup is the same for all.
+const PATHS = ['gba', 'switch', 'celio', 'gift', 'mii'];
 const PATH_STORE = 'gblink-switch-path';
 
 function remembered(key) {
@@ -1079,7 +1090,7 @@ function remember(key, value) {
 }
 
 function pathBusy() {
-    return Boolean(state.bridge || state.trade || state.celio?.running || state.gift);
+    return Boolean(state.bridge || state.trade || state.celio?.running || state.gift || state.mii);
 }
 
 function choosePath(path, { keep = true } = {}) {
@@ -1546,13 +1557,17 @@ function renderGiftBackups() {
 }
 
 function downloadGiftBackup(backup) {
-    const url = URL.createObjectURL(new Blob([backup.bytes], { type: 'application/octet-stream' }));
+    downloadBytes(backup.bytes, backup.name);
+    log('gift', `downloaded ${backup.name}`);
+}
+
+function downloadBytes(bytes, name) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = backup.name;
+    link.download = name;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    log('gift', `downloaded ${backup.name}`);
 }
 
 const GIFT_WHERE = 'On the Switch: MYSTERY GIFT, WONDER CARDS, FRIEND, then choose GBLINK.';
@@ -1647,6 +1662,203 @@ function renderGift() {
     renderGiftProgress();
 }
 
+// ---------------------------------------------------------------- Tomodachi Life
+
+// Why Local Play cannot start, or null.
+function miiBlocker() {
+    if (!state.esp?.attached) return 'Connect the ESP32 board in step 1.';
+    if (!state.esp.info) return 'Install the firmware in step 1 first.';
+    if (newer(LINK_FIRMWARE, state.esp.info.version)) return `Tomodachi Life needs the board’s firmware ${LINK_FIRMWARE} or newer. Install it again in step 1.`;
+    if (!state.keys?.complete) return 'The board needs its keys from step 1.';
+    return null;
+}
+
+async function miiStart() {
+    if (state.mii || miiBlocker()) return;
+    const link = new MiiLink(state.esp);
+    link.addEventListener('log', (e) => log('mii', e.detail));
+    link.addEventListener('status', (e) => {
+        if (state.mii !== link) return;
+        state.miiStatus = e.detail;
+        renderMii();
+    });
+    link.addEventListener('received', (e) => {
+        let about;
+        try { about = describePayload(e.detail); } catch { about = { kind: 'Item', name: '' }; }
+        state.miiReceived.unshift({ bytes: e.detail, about, time: new Date() });
+        log('mii', `received ${about.kind.toLowerCase()} ${about.name || '(no name)'}`);
+        renderMii();
+    });
+    link.addEventListener('answer', (e) => {
+        const shown = state.miiSendNote?.name ?? 'it';
+        state.miiSendNote = {
+            ACCEPT: { text: `The Switch took ${shown}.`, tone: 'good' },
+            REJECT: { text: 'The Switch declined it: the player said no, or the island is full.', tone: 'warn' },
+            CANCEL: { text: 'The Switch cancelled the exchange.', tone: 'warn' },
+        }[e.detail];
+        log('mii', `the Switch answered ${e.detail}`);
+        renderMii();
+    });
+    link.addEventListener('ended', (e) => { if (state.mii === link) miiEnded(e.detail); });
+    state.mii = link;
+    state.miiNote = null;
+    state.miiStatus = null;
+    state.miiSendNote = null;
+    render();
+    try {
+        await link.start();
+        log('page', 'looking for Tomodachi Life\'s Local Play');
+    } catch (error) {
+        if (state.mii === link) state.mii = null;
+        state.miiNote = { text: describe(error), tone: 'bad' };
+    }
+    render();
+}
+
+function miiEnded(reason) {
+    state.mii = null;
+    state.miiStatus = null;
+    state.miiNote = { text: reason, tone: 'warn' };
+    log('page', `Local Play ended: ${reason}`);
+    render();
+    pollSoon();
+}
+
+async function miiStop(note = null) {
+    const link = state.mii;
+    if (!link || state.miiStopping) return;
+    state.miiStopping = true;
+    render();
+    await link.stop();
+    state.mii = null;
+    state.miiStopping = false;
+    state.miiStatus = null;
+    state.miiNote = note;
+    log('page', 'left Local Play');
+    render();
+    pollSoon();
+}
+
+async function onMiiFile(file) {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { state.miiSendNote = { text: `${file.name} is too large to be something the game sent.`, tone: 'bad' }; renderMii(); return; }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    chooseOutgoing(bytes, file.name);
+}
+
+function chooseOutgoing(bytes, fileName) {
+    try {
+        const about = describePayload(bytes);
+        state.miiOutgoing = { bytes, about, fileName };
+        state.miiName = about.name;
+        state.miiSendNote = null;
+        log('mii', `chose ${fileName} to send`);
+    } catch (error) {
+        state.miiSendNote = { text: `${fileName} is not something Tomodachi Life sent (${describe(error)}).`, tone: 'bad' };
+    }
+    renderMii();
+}
+
+function miiSend() {
+    const outgoing = state.miiOutgoing, link = state.mii;
+    if (!outgoing || !link?.ready) return;
+    const name = state.miiName.trim();
+    try {
+        const payload = preparePayload(outgoing.bytes, { name: name && name !== outgoing.about.name ? name : null });
+        state.miiSendNote = { text: '', tone: '', name: name || outgoing.about.name || 'it' };
+        link.send(payload);
+    } catch (error) {
+        state.miiSendNote = { text: `It could not be sent: ${describe(error)}`, tone: 'bad' };
+    }
+    renderMii();
+}
+
+function aboutLine(about) {
+    const parts = [about.kind];
+    if (about.gender) parts.push(about.gender);
+    if (about.birthday) parts.push(`born ${about.birthday.month}/${about.birthday.day}`);
+    return parts.join(' · ');
+}
+
+function payloadFileName(about) {
+    const name = (about.name || about.kind).replace(/[^\p{L}\p{N}_ -]+/gu, '').trim().replace(/\s+/g, '-') || 'item';
+    return `${name}.bin`;
+}
+
+function miiView() {
+    const status = state.miiStatus;
+    const done = (detail) => detail?.total ? ` (${Math.round(100 * detail.done / detail.total)}%)` : '';
+    if (state.miiStopping) return { headline: 'Leaving Local Play…', hint: '', tone: '' };
+    switch (status?.stage) {
+        case 'joining': return { headline: `Joining ${status.detail?.host || 'the Switch'}…`, hint: '', tone: '' };
+        case 'connecting': return { headline: `In ${status.detail?.host || 'the Switch'}'s Local Play, connecting to the game…`, hint: '', tone: '' };
+        case 'ready': return { headline: `Connected to ${status.detail?.host || 'the Switch'}.`, hint: 'Send a Mii from the Switch, or send one from this page.', tone: 'good' };
+        case 'receiving': return { headline: `The Switch is sending something${done(status.detail)}…`, hint: '', tone: '' };
+        case 'sending': return { headline: 'Sent. Waiting for the Switch to answer…', hint: 'Accept it on the Switch.', tone: '' };
+        default: return { headline: 'Looking for Tomodachi Life…', hint: 'On the Switch: Local Play, then Look for another player.', tone: '' };
+    }
+}
+
+function renderMii() {
+    const running = Boolean(state.mii);
+    const blocker = miiBlocker();
+    $('mii-start').hidden = running;
+    $('mii-start').disabled = Boolean(blocker);
+    $('mii-stop').hidden = !running;
+    $('mii-stop').disabled = state.miiStopping;
+    const note = state.miiNote ?? (!running && blocker ? { text: blocker, tone: '' } : null);
+    setLine('mii-note', note?.text ?? '', note?.tone ?? '');
+    $('mii-session').hidden = !running;
+    let tone = '';
+    if (running) {
+        const view = miiView();
+        $('mii-headline').textContent = view.headline;
+        $('mii-hint').textContent = view.hint;
+        $('mii-session').className = `session ${view.tone}`.trim();
+        tone = view.tone === 'good' ? 'good' : 'busy';
+    }
+    $('mii-dot').className = `dot ${tone}`.trim();
+
+    const outgoing = state.miiOutgoing;
+    $('mii-outgoing').hidden = !outgoing;
+    if (outgoing) {
+        $('mii-outgoing-about').textContent = `${outgoing.fileName}: ${aboutLine(outgoing.about)}`;
+        if ($('mii-name').value !== state.miiName) $('mii-name').value = state.miiName;
+        $('mii-name-warning').hidden = [...state.miiName.trim()].length <= MAX_NAME;
+        $('mii-send').disabled = !state.mii?.ready;
+        $('mii-send').title = state.mii?.ready ? '' : running ? 'Wait until the Switch is connected.' : 'Press Start first.';
+    }
+    setLine('mii-send-note', state.miiSendNote?.text ?? '', state.miiSendNote?.tone ?? '');
+
+    $('mii-received').hidden = !state.miiReceived.length;
+    $('mii-received-list').replaceChildren(...state.miiReceived.map((entry) => {
+        const item = document.createElement('li');
+        const copy = document.createElement('div');
+        copy.className = 'backup-copy';
+        const name = document.createElement('p');
+        name.className = 'backup-name';
+        name.textContent = entry.about.name || '(no name)';
+        const meta = document.createElement('p');
+        meta.className = 'backup-meta';
+        meta.textContent = `${aboutLine(entry.about)} · ${entry.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        copy.append(name, meta);
+        const actions = document.createElement('div');
+        actions.className = 'backup-actions';
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.textContent = 'Download';
+        download.addEventListener('click', () => downloadBytes(entry.bytes, payloadFileName(entry.about)));
+        const again = document.createElement('button');
+        again.type = 'button';
+        again.className = 'quiet';
+        again.textContent = 'Send back';
+        again.addEventListener('click', () => chooseOutgoing(entry.bytes, payloadFileName(entry.about)));
+        actions.append(download, again);
+        item.append(copy, actions);
+        return item;
+    }));
+}
+
 function renderGame() {
     const cable = state.game === 'cable';
     for (const button of $('play-game').children) {
@@ -1668,7 +1880,7 @@ function renderPaths() {
         const chosen = tab.dataset.path === state.path;
         tab.setAttribute('aria-selected', String(chosen));
         tab.disabled = !chosen && pathBusy();
-        tab.title = tab.disabled ? (state.trade ? 'Disconnect from the Switch first.' : state.gift ? 'Stop the Mystery Gift first.' : 'Stop carrying the link first.') : '';
+        tab.title = tab.disabled ? (state.trade ? 'Disconnect from the Switch first.' : state.gift ? 'Stop the Mystery Gift first.' : state.mii ? 'Stop Tomodachi Life first.' : 'Stop carrying the link first.') : '';
     }
     for (const card of document.querySelectorAll('main > [data-path]')) card.hidden = card.dataset.path !== state.path;
 }
@@ -2132,6 +2344,7 @@ function render() {
     renderGame();
     renderCelio();
     renderGift();
+    renderMii();
     if (state.bridge) setLine('bridge-status', 'Carrying the link. Keep this tab open and in view.', 'good');
     else if (state.bridgeNote) setLine('bridge-status', state.bridgeNote.text, state.bridgeNote.tone);
     else setLine('bridge-status', blocker ?? 'Ready.');
@@ -2276,6 +2489,18 @@ function wireUp() {
     $('gift-again').addEventListener('click', () => giftDecide(true));
     $('gift-keep').addEventListener('click', () => giftDecide(false));
     $('gift-sav').addEventListener('change', (event) => onGiftSav(event.target.files?.[0]));
+    $('mii-file').addEventListener('change', (event) => {
+        onMiiFile(event.target.files[0]);
+        event.target.value = '';
+    });
+    const miiCard = $('mii-card'), miiDrop = $('mii-drop');
+    for (const name of ['dragenter', 'dragover']) miiCard.addEventListener(name, (event) => { event.preventDefault(); miiDrop.classList.add('over'); });
+    for (const name of ['dragleave', 'drop']) miiCard.addEventListener(name, (event) => { event.preventDefault(); miiDrop.classList.remove('over'); });
+    miiCard.addEventListener('drop', (event) => onMiiFile(event.dataTransfer?.files?.[0]));
+    $('mii-start').addEventListener('click', miiStart);
+    $('mii-stop').addEventListener('click', () => miiStop());
+    $('mii-send').addEventListener('click', miiSend);
+    $('mii-name').addEventListener('input', (event) => { state.miiName = event.target.value; renderMii(); });
     $('bridge-start').addEventListener('click', onBridgeStart);
     $('bridge-stop').addEventListener('click', () => stopBridge());
     $('wiring-check').addEventListener('click', onWiringCheck);

@@ -7,7 +7,7 @@ build step and no server.
 
 ## Modes
 
-Pick one at the top of the page, or open `#gba`, `#switch`, `#celio` or `#gift` directly.
+Pick one at the top of the page, or open `#gba`, `#switch`, `#celio`, `#gift` or `#mii` directly.
 
 **GBA to Switch** (ESP32 board + GB-Link adapter)
 
@@ -41,6 +41,17 @@ its player picked, so the page waits for you to choose or press *Accept trade*.
 A Switch that already has the card is sent it again only if you say so on the page. The
 group stays open for one Switch after another; after a link the page had to end itself,
 the board restarts and the group opens again.
+
+**Tomodachi Life** (ESP32 board only, firmware 2.2.0 or later)
+
+1. **ESP32 board:** the same as above.
+2. **Tomodachi Life:** in Tomodachi Life: Living the Dream, open Local Play and press
+   *Look for another player*, then press *Start*. The board joins the room with its
+   stored keys (`LDN_JOIN`) and the page speaks the game's protocol over `LDN_TAP` and
+   `LDN_ETH` (`js/mii/`, a port of `firmware/tools/tomodachi/`). Whatever the Switch sends
+   is accepted and listed for download; a `.bin` dropped on the card goes back with new
+   transfer IDs and a new Mii ID, optionally renamed. `node tests/mii.mjs` runs it against
+   a stand-in Switch.
 
 Keep the tab visible while playing. Browsers slow down hidden tabs, and the game drops a
 partner that stops answering.
