@@ -77,5 +77,10 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   a 64 KB one (`784e7ede`, likely the ugctex) and a 96 KB one (`afa60833`). Sent back to
   its own island with a new transfer UUID, food is accepted and shown as received from
   another owner, as the game seems to mark every item that arrives over Local Play.
+  Clothing is `Category` 9 (as are a Mii's own clothes), with `ClothType`,
+  `ClothGender`, `ClothSeasonType`, `UgcClothGenreType`, `BaseColor` and `Price`, and
+  three zstd files: the drawing (`4b1686c3`, the same 256×256 layout), a 128 KB one
+  (`8d018ba1`) and a 64 KB one (`8e3888dd`). It goes back to its island the same way.
+  Binary values sit back to back, unaligned; the next container aligns to 4 bytes.
 
 `samples/` and `captures/` hold personal data and are not committed.

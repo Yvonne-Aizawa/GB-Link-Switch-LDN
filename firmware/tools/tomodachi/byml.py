@@ -151,24 +151,25 @@ class Writer:
     def place(self, v):
         """Write an out-of-line value and return its offset."""
         kind = kind_of(v)
+        # The game packs binary values back to back, unaligned; what follows aligns itself.
         if kind == BINARY:
-            at = len(self.out); self.out += struct.pack('<I', len(v)) + v; self.align(); return at
+            at = len(self.out); self.out += struct.pack('<I', len(v)) + v; return at
         if kind in WIDE_TYPES:
-            at = len(self.out); self.out += struct.pack(WIDE_TYPES[kind], v.value); return at
+            self.align(); at = len(self.out); self.out += struct.pack(WIDE_TYPES[kind], v.value); return at
         if kind == HASH32:
             # Entries sorted by hash (stable, so a repeated hash keeps its order).
             rows = sorted(range(len(v.entries)), key=lambda i: v.entries[i][0])
             later = [i for i in rows if kind_of(v.entries[i][1]) in OUT_OF_LINE]
             order = [i for i in v.order if i in later] + [i for i in later if i not in v.order]
             placed = {id(v.entries[i][1]): self.place(v.entries[i][1]) for i in order}
-            at = len(self.out)
+            self.align(); at = len(self.out)
             self.out += struct.pack('<I', HASH32 | len(rows) << 8)
             for i in rows: self.out += struct.pack('<II', v.entries[i][0], self.slot(v.entries[i][1], placed))
             self.out += bytes(kind_of(v.entries[i][1]) for i in rows); self.align()
             return at
         if kind == ARRAY:
             placed = {id(x): self.place(x) for x in v if kind_of(x) in OUT_OF_LINE}
-            at = len(self.out)
+            self.align(); at = len(self.out)
             self.out += struct.pack('<I', ARRAY | len(v) << 8) + bytes(kind_of(x) for x in v); self.align()
             for x in v: self.out += struct.pack('<I', self.slot(x, placed))
             return at
