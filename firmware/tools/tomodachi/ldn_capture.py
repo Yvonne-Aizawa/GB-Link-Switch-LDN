@@ -148,7 +148,7 @@ class Tcp:
         ip = frame[14:]; ihl = (ip[0] & 15) * 4; seg = ip[ihl:int.from_bytes(ip[2:4], "big")]
         sport, dport, seq, ack, off, flags = struct.unpack(">HHIIBB", seg[:14])
         data = seg[(off >> 4) * 4:]; src = ".".join(map(str, ip[12:16]))
-        if flags & self.RST: self.log("reset by the Switch"); self.state = "CLOSED"; return
+        if flags & self.RST: self.log("reset by the Switch"); self.closed(); return
         if self.state == "SYN_SENT":
             if flags & self.SYN and flags & self.ACK and ack == self.seq + 1:
                 self.seq += 1; self.ack = seq + 1; self.state = "ESTABLISHED"; self.segment(self.ACK); self.log("connected")
@@ -169,9 +169,14 @@ class Tcp:
         if flags & self.FIN:
             self.ack += 1; self.segment(self.FIN | self.ACK); self.seq += 1
             self.log("the Switch closed the connection")
-            # An accepted connection goes back to listening: the Switch reconnects after a transfer.
-            if self.name == "in": self.state = "LISTEN"; self.peer = None; self.seq = int.from_bytes(os.urandom(4), "big")
-            else: self.state = "CLOSED"
+            self.closed()
+
+    def closed(self):
+        """An accepted connection goes back to listening, ours closes (the main loop opens a
+        new one): the Switch reconnects after each transfer."""
+        if self.cltp: self.cltp.buf, self.cltp.need = bytearray(), 0
+        if self.name == "in": self.state = "LISTEN"; self.peer = None; self.seq = int.from_bytes(os.urandom(4), "big")
+        else: self.state = "CLOSED"
 
 
 class Cltp:
@@ -300,6 +305,9 @@ def main():
             if sent and (out.cltp.answer or tcp.cltp.answer):
                 result = out.cltp.answer or tcp.cltp.answer; log(start, f"The Switch answered {result}"); break
             if time.time() >= next_ping: esp.command("LDN_PING", 1); next_ping = time.time() + 1
+            if beacon and out.state == "CLOSED" and not sent:
+                out = Tcp(esp, host["mac"], me["ip"], 49200 + int.from_bytes(os.urandom(1), "big"), start, "out")
+                out.cltp = Cltp(out, start)
             if beacon and token and out.state is not None and out.peer is None:
                 out.connect((host["ip"], 5002))
             out.poll()
