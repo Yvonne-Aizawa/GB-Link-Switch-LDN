@@ -334,6 +334,20 @@ footer p { color: var(--muted); font-size: 0.82rem; }
 
 /* Tomodachi Life: what to send, and what the Switch sent. */
 .mii-heading { margin: 22px 0 0; font-size: 0.75rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-#mii-name { flex: 1 1 14em; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: inherit; font: inherit; }
 #mii-outgoing-about { margin-top: 12px; }
 .backups-list li .backup-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.mii-form { margin-top: 12px; display: grid; gap: 8px; }
+#mii-fields { display: grid; gap: 8px; }
+.mii-row { display: grid; grid-template-columns: 9em minmax(0, 1fr); align-items: center; gap: 4px 12px; }
+.mii-row > span:first-child { color: var(--muted); font-size: 0.9rem; }
+.mii-row input[type="text"], .mii-row input[type="number"], .mii-row select { min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: inherit; font: inherit; }
+.mii-row input[type="range"] { width: 100%; accent-color: var(--accent); }
+.mii-checks, .mii-date { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.mii-date input[type="number"] { width: 6.5em; }
+.mii-slider { display: grid; grid-template-columns: 4.5em minmax(0, 1fr) 4.5em 2.5em; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+.mii-slider output { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.mii-slider span:last-of-type { text-align: left; }
+.mii-group { margin: 10px 0 0; font-size: 0.75rem; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 520px) {
+    .mii-row { grid-template-columns: 1fr; }
+}

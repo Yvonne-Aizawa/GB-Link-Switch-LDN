@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { MiiLink } from '../js/mii/link.js';
 import { describe, murmur3, prepare } from '../js/mii/payload.js';
+import { CUSTOM_VOICE, Payload } from '../js/mii/mii.js';
 import { Hash32, Reader, Value, Writer, INT, UINT } from '../js/mii/byml.js';
 
 let failures = 0;
@@ -156,6 +157,43 @@ try {
     check(Buffer.compare(Buffer.from(new Writer(r.root, r.strings, r.version).build()), Buffer.from(data)) === 0, 'a real payload round-trips');
 } catch (error) {
     if (error.code !== 'ENOENT') throw error;
+}
+
+// ---- editing a Mii
+
+{
+    const h = (name) => murmur3(new TextEncoder().encode(name));
+    const inner = new Writer(new Hash32([
+        [0x05f5f62c, new Uint8Array(152)],
+        [h('CallName'), 'Test02'], [h('Gender'), new Value(INT, 1)], [h('LoveGender'), new Value(UINT, 7)],
+        [h('CharacterGaiety'), new Value(UINT, 8)], [h('NameRegionLanguageID'), new Value(INT, 5)],
+        [0xa90584fa, new Value(INT, 4)],
+        ...['Speed', 'Pitch', 'Formant', 'Tension', 'Intonation'].map((v) => [h(`Voice${v}`), new Value(INT, 1)]),
+    ])).build();
+    const data = new Writer(new Hash32([[0x25efa387, 'Test02'], [0xceb3a288, 'u'], [0x689b60b2, new Value(INT, 6)], [0xb77378b7, inner]])).build();
+    const m = new Payload(data);
+    check(m.isMii && m.get('pronunciation') === 'Test02' && m.get('loves') === 7 && m.phrase === '', 'reads a Mii');
+    m.name = 'Miku';
+    m.set('gaiety', 3);
+    m.set('loves', 2);
+    m.phrase = 'Hello there';
+    m.setVoicePreset(9);   // Robot S
+    let threw = false;
+    try { m.set('pronunciation', 4); } catch { threw = true; }
+    check(threw, 'a string field refuses a number');
+    threw = false;
+    try { m.set('day', 3); } catch { threw = true; }
+    check(threw, 'a field the Mii lacks is refused');
+    const back = new Payload(m.build());
+    check(back.name === 'Miku' && back.get('gaiety') === 3 && back.get('loves') === 2, 'edits survive the build');
+    check(back.inner.root.get(h('LoveGender')).type === UINT && back.inner.root.get(h('CharacterGaiety')).type === UINT, 'node types are kept');
+    check(back.phrase === 'Hello there' && back.get(0x51110d81) === 5 && back.get(0x87c1aff6) === '' && back.get(0xe5da2956) === 0, 'a phrase brings its fields, in the name\'s language');
+    check(back.get('voicePreset') === 9 && back.get('formant') === 50 && back.get('intonation') === 3 && back.get('speed') === 32, 'a voice preset sets its sliders');
+    m.setVoicePreset(CUSTOM_VOICE);
+    check(new Payload(m.build()).get('formant') === 50, 'Custom keeps the sliders');
+    const empty = new Payload(data);
+    empty.phrase = '';
+    check(!empty.inner.root.has(0xc3f3d6a6), 'no phrase adds no fields');
 }
 
 // ---- the link
