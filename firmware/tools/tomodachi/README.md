@@ -11,10 +11,14 @@ room, which the board joins.
 - `send_mii.py <payload> [--name NAME]` sends a Mii the Switch supplied before, with
   a new Mii ID (so the game takes it as a new resident) and optionally a new name, and
   reports whether the Switch accepted it. `--dry-run --out FILE` only builds it.
+  `--face-paint IMAGE` replaces the face paint with an image (the payload must have
+  face paint already; add `--with zstandard --with pillow`).
 - `ltd_to_payload.py <mii.ltd> <template>` sends a Mii exported by
   [ShareMii](https://github.com/Star-F0rce/ShareMii): its face, face paint, name,
-  personality, voice and birthday go into a payload the Switch supplied before (one
-  with face paint when the `.ltd` has it). Takes the same `--name`, `--out`, `--dry-run`.
+  pronunciation, personality, voice and birthday go into a payload the Switch supplied
+  before (one with face paint when the `.ltd` has it). Takes the same `--name`, `--out`,
+  `--dry-run`.
+- `face_paint.py <payload> <image> <out>` does only the face paint part of that.
 - `byml.py <file>` dumps a payload's BYAML tree; it reads and rewrites the documents
   byte for byte.
 - `ldn_scan.py [seconds]` lists the LDN rooms around and decrypts what they advertise.
@@ -45,11 +49,14 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   their names under `25efa387` too. Some hashes appear twice (`71f55538`). String
   tables must stay sorted, or the Switch rejects the payload at once.
 - **Field names.** The keys are MurmurHash3 (seed 0) of field names, as in the save:
-  `Name` is `25efa387`, and the Mii document has `CallName`, `Gender`, `PronounType`,
-  `ClothStyle`, `LoveGender` (a bit per gender), `BirthYear`/`BirthMonth`/`BirthDay`,
+  `Name` is `25efa387`, and the Mii document has `CallName` (the pronunciation),
+  `Gender`, `PronounType`, `ClothStyle`, `LoveGender` (a bit per gender), `BirthYear`/`BirthMonth`/`BirthDay`,
   `DirectAge`, `CharacterSociability` and the other four traits, and `VoiceFormant`,
   `VoiceSpeed`, `VoiceIntonation`, `VoicePitch`, `VoiceTension`. Face paint is an item
-  of type 7 whose own document holds the zstd canvas (`25997a82`) and ugctex
-  (`b0f5c106`), the same files a `.ltd` carries.
+  of type 7 whose own document holds the zstd canvas (`25997a82`, 256x256 RGBA8) and
+  ugctex (`b0f5c106`, 512x512 BC1), the same files a `.ltd` carries. Both are Tegra
+  block-linear surfaces with 16-GOB blocks.
+- **Voice preset.** `a90584fa` numbers the save's presets from Boy: Custom is -1,
+  Robot L (top row, fifth) is 8.
 
 `samples/` and `captures/` hold personal data and are not committed.

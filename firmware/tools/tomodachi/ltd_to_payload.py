@@ -5,8 +5,8 @@ holds the same 152-byte core data as the network payload, plus the personality, 
 birthday, name and face paint. The network payload holds more (clothes, traits), so the
 .ltd's fields go into a template: a payload the Switch sent before (supply-*.bin). Use
 one with face paint for a .ltd with face paint, and one without otherwise. What the
-.ltd lacks comes from the template, and so do the voice preset and the pronunciation,
-whose network fields are not known yet.
+.ltd lacks comes from the template. The pronunciation goes into CallName (what the game
+says aloud); the voice preset goes into a90584fa, whose field name is not known.
 
 Usage: uv run --with pyserial --with cryptography python -I ltd_to_payload.py
        <mii.ltd> <template> [--name NAME] [--out FILE] [--dry-run] [--seconds N]
@@ -36,9 +36,14 @@ H = lambda name: murmur3(name.encode())
 # The save's enums are hashes of names; the payload numbers them (assumed in this order).
 FIELDS = ["CharacterSociability", "CharacterAudaciousness", "CharacterActiveness", "CharacterCommonsense",
           "CharacterGaiety", "VoiceFormant", "VoiceSpeed", "VoiceIntonation", "VoicePitch", "VoiceTension",
-          None, "Gender", "PronounType", "ClothStyle", "BirthYear", "BirthDay", "DirectAge", "BirthMonth"]
+          "VoicePreset", "Gender", "PronounType", "ClothStyle", "BirthYear", "BirthDay", "DirectAge", "BirthMonth"]
 ENUMS = {"Gender": ["Male", "Female", "NonBinary"], "ClothStyle": ["Male", "Female", "NonBinary"],
-         "PronounType": ["He", "She", "They"]}
+         "PronounType": ["He", "She", "They"],
+         # Numbered from Boy: Custom is -1 (a custom voice), Robot L 8 (seen in game)
+         "VoicePreset": ["Pet", "System", "Custom", "Boy", "Girl", "Male", "Female", "OldMan", "OldWoman",
+                         "BigCharacter", "SmallCharacter", "RobotL", "RobotS"]}
+ENUM_FIRST = {"VoicePreset": -3}           # the number of each enum's first name, when not 0
+KEYS = {"VoicePreset": 0xa90584fa}         # fields whose names are not known
 ITEM_TYPE, FACE_PAINT = 0x689b60b2, 7      # an item's type; 7 is face paint
 CANVAS, UGCTEX = 0x25997a82, 0xb0f5c106    # the face paint's zstd blobs (names unknown)
 
@@ -73,17 +78,17 @@ def convert(ltd, template, name=None):
     inner, store_inner = nested(outer.root, send_mii.MII)
     name = name or mii["name"]
     outer.root.set(send_mii.NAME, name)
-    inner.set(H("CallName"), name)
+    # CallName is the pronunciation; the game says the name itself when it is the same
+    inner.set(H("CallName"), "".join(c for c in mii["pronunciation"] if c >= " ") or name)
     inner.set(send_mii.CORE, bytes(mii["core"]))
 
     for field, value in zip(FIELDS, mii["values"]):
-        if field is None: continue
         if field in ENUMS:
-            names = {H(n): i for i, n in enumerate(ENUMS[field])}
+            names = {H(n): i for i, n in enumerate(ENUMS[field], ENUM_FIRST.get(field, 0))}
             if value & 0xffffffff not in names:
                 print(f"warning: unknown {field} {value & 0xffffffff:#x}, the template's is kept"); continue
             value = names[value & 0xffffffff]
-        set_number(inner, H(field), value)
+        set_number(inner, KEYS.get(field) or H(field), value)
     set_number(inner, H("LoveGender"), mii["love"])
 
     paints = [k for k, v in inner.items.items() if isinstance(v, (bytes, bytearray))
