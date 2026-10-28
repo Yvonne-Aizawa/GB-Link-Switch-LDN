@@ -8,6 +8,7 @@ set(BRIDGE_SOURCES
     "${BRIDGE_COMMON}/ldn_udp.c"
     "${BRIDGE_COMMON}/ldn_wire.c"
     "${BRIDGE_COMMON}/ldn_keys.c"
+    "${BRIDGE_COMMON}/ldn_join.c"
     "${BRIDGE_COMMON}/pico_link.c"
     "${BRIDGE_COMMON}/trade_shim.c"
     "${BRIDGE_COMMON}/pia_crypto.c"

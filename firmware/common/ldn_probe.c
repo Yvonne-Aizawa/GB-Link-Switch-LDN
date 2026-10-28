@@ -23,6 +23,7 @@
 #include "ldn_control.h"
 #include "ldn_keys.h"
 #include "pia_bridge.h"
+#include "ldn_join.h"
 #include "pia_crypto.h"
 #include "esp_heap_caps.h"
 #include "ldn_session.h"
@@ -108,6 +109,7 @@ static void export_advertisement(void)
                    (unsigned long long)room.communication_id, room.member_count, room.maximum,
                    host_name, room.app_data_len);
         pia_bridge_room(&room);
+        ldn_join_room(&room);
     }
     fflush(stdout);
 }
@@ -521,6 +523,7 @@ static void run_private_join(void)
     for (;;) {
         ldn_control_poll();
         pia_bridge_poll();
+        ldn_join_poll();
         int reason = atomic_exchange(&s_disconnect_reason, -1);
         if (reason >= 0) printf("LDN_DISCONNECTED %d\n", reason);
         const int64_t now = esp_timer_get_time();
