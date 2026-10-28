@@ -18,7 +18,8 @@ room, which the board joins.
   on a piece or a whole outfit by its ID, `--take-off TYPE` takes a piece off, and
   `--clothes-from FILE` copies another Mii's clothes, and `--phrase` sets the Mii's phrase (`--phrase-kind` when it is said: TalkStart,
   TalkEnd, Phrase, TalkInSleep, ...). `--favourite-foods A,B` and `--hated-foods A,B` set
-  the two all-time favourite and two hated foods by English name or ID. `--habits A,B,...`
+  the favourite and hated foods in the game's order (ultra best first, ultra worst last)
+  by English name or ID. `--habits A,B,...`
   replaces the habits (in slot order), `--add-habit` adds one in place of any of its
   kind (a Mii has one greeting, one walk, ...), `--remove-habit` takes one away.
 - `clothes.py <text>` searches the game's 1087 pieces and 347 outfits by ID or English
@@ -113,9 +114,10 @@ Run them with `uv run --with pyserial --with cryptography python -I <script>`.
   confirmed on received Miis). Removing face paint
   in the game drops its item and sets `ba906068` to -1.
 - **Foods.** Four fields hold the MurmurHash3 of a food's `RSDB/FoodParam` Name (`Tofu`,
-  `Crab`): all-time favourites `3cc01748` then `79612bf3`, hated foods `a95867bb` then
-  `85d70c73`, in the order the game lists them (confirmed by feeding). The foods a Mii
-  has been seen to enjoy aren't sent.
+  `Crab`), named as in the save: `UltraBestId` `3cc01748`, `BestId` `79612bf3`, `WorstId`
+  `a95867bb`, `UltraWorstId` `85d70c73`, the order the game lists them in (confirmed by
+  feeding; the ultra ones get the stronger colour). The foods a Mii has been seen to
+  enjoy aren't sent.
 - **Voice preset.** `a90584fa` numbers the save's presets from Boy: Custom is -1,
   Robot L (top row, fifth) is 8.
 - **More names**, from the hash table of

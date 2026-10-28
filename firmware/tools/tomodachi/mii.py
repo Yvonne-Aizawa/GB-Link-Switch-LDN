@@ -14,12 +14,12 @@ template has it (island and creator, and anything not set).
     m.face_paint_in_front = True          # over the eyes, eyebrows and mouth
     m.wear("Coordinate0091")              # an outfit (the witch outfit), from tables.json
     m.wear("ClothHeadwearHatSimpleCap", color=2)   # or one piece, replacing what it covers
-    m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs
-    m.hated_foods = ["panini", "Crab"]
+    m.favourite_foods = ["tofu", "gnocchi"]          # English names or IDs, in the game's order
+    m.hated_foods = ["panini", "Crab"]               # (the last is the one it hates most)
     m.add_habit("Walks cutely")                     # replaces the walk it had
     m.save("miku.bin")                    # new transfer UUIDs and Mii ID
 
-Fields without a property are reached by name or hash: m["TasteType"], m["HatedFood1"], m[0x7de5dfb0].
+Fields without a property are reached by name or hash: m["TasteType"], m["UltraWorstId"], m[0x4dfe38dc].
 Clothes are named by their IDs in the game's tables; clothes.py <text> finds them, and
 foods.py <text> finds foods.
 
@@ -67,10 +67,10 @@ ENUMS = {"Gender": GENDERS, "ClothStyle": GENDERS, "PronounType": ["He", "She", 
                       "TalkInSleep", "ShoutToSea", "BeforeEat"]}
 FIRST = {"VoicePreset": -3, "WordKind": -1}
 # Fields whose names are not known. Foods hold the MurmurHash3 of a RSDB/FoodParam Name
-# (Crab): two all-time favourites and two hated foods, each in the order the game lists them.
+# (Crab), named as in the save. The game lists them UltraBest, Best, Worst, UltraWorst.
 # IsTopsIn is the save's name for the same flag (a top tucked into the bottoms).
 KEYS = {"VoicePreset": 0xa90584fa, "WordKind": 0xe5da2956, "IsTopsIn": 0x7de5dfb0,
-        "FavouriteFood1": 0x3cc01748, "FavouriteFood2": 0x79612bf3, "HatedFood1": 0xa95867bb, "HatedFood2": 0x85d70c73}
+        "UltraBestId": 0x3cc01748, "BestId": 0x79612bf3, "WorstId": 0xa95867bb, "UltraWorstId": 0x85d70c73}
 PERSONALITY = ["Sociability", "Audaciousness", "Activeness", "Commonsense", "Gaiety"]
 VOICE = ["Formant", "Speed", "Intonation", "Pitch", "Tension"]
 # The .ltd's 18 values at offset 160, in order, by their field names in the payload.
@@ -209,9 +209,9 @@ class Mii:
             c = foods.catalog()
             for f, n in zip(fields, names): self.inner.set(f, murmur3(c.find(n).encode()))
         return property(get, set)
-    # Two all-time favourites and two hated foods, in the game's order; read by English name
-    favourite_foods = _foods(["FavouriteFood1", "FavouriteFood2"])
-    hated_foods = _foods(["HatedFood1", "HatedFood2"])
+    # The favourite and hated foods in the game's order (UltraBest, Best; Worst, UltraWorst)
+    favourite_foods = _foods(["UltraBestId", "BestId"])
+    hated_foods = _foods(["WorstId", "UltraWorstId"])
     del _foods
 
     @property
@@ -533,8 +533,8 @@ def main():
                    help="take off the piece of a type (Headwear, Shoes, BottomsB, ...)")
     p.add_argument("--wear", metavar="ITEM[:COLOUR]", action="append", default=[],
                    help="put on a piece or outfit (clothes.py finds them)")
-    p.add_argument("--favourite-foods", metavar="A,B", help="the two all-time favourites (foods.py finds them)")
-    p.add_argument("--hated-foods", metavar="A,B", help="the two hated foods")
+    p.add_argument("--favourite-foods", metavar="A,B", help="the favourite foods, ultra best first (foods.py finds them)")
+    p.add_argument("--hated-foods", metavar="A,B", help="the hated foods, ultra worst last")
     p.add_argument("--habits", metavar="A,B,...", help="replace the habits, in slot order (habits.py finds them)")
     p.add_argument("--add-habit", metavar="HABIT", action="append", default=[], help="add a habit, replacing one of its kind")
     p.add_argument("--remove-habit", metavar="HABIT", action="append", default=[])
